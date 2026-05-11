@@ -46,8 +46,6 @@ pyinstaller --onefile \
   lib/app_launcher.py
 ```
 
-The executable will be in `dist/FinOpsDashboard`
-
 ### Considerations
 - R must still be installed on the target machine (can't bundle R in PyInstaller)
 - All R packages must be installed beforehand
@@ -73,8 +71,8 @@ EXPOSE 3456
 CMD ["./launch_app.sh"]
 ```
 
-Build: `docker build -t finops-dashboard .`
-Run: `docker run -it finops-dashboard`
+Build: `docker build -t CloudPulse .`
+Run: `docker run -it CloudPulse`
 
 ---
 
@@ -88,15 +86,15 @@ Run: `docker run -it finops-dashboard`
 │  │  ┌─────────────────────────────┐  │  │
 │  │  │  QWebEngineView (Chromium)  │  │  │
 │  │  │  ↓                          │  │  │
-│  │  │  localhost:3456             │  │  │
+│  │  │  localhost                  │  │  │
 │  │  └─────────────────────────────┘  │  │
 │  └───────────────────────────────────┘  │
 └──────────────────┬──────────────────────┘
                    │
-        ┌──────────▼──────────┐
-        │  Shiny R Server     │
-        │  (Subprocess)       │
-        │  localhost:3456     │
+        ┌──────────▼─────────┐
+        │  Shiny R Server    | 
+        │  (Subprocess)      |
+        │  localhost         | 
         └────────────────────┘
 ```
 

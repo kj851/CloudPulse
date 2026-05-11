@@ -22,8 +22,8 @@ FinOps is a desktop wrapper and dashboard for analyzing and optimizing cloud cos
 1. Clone the repository:
 
 ```bash
-git clone <your-repo-url>
-cd FinOps
+git clone https://github.com/kj851/CloudPulse/tree/main#
+cd CloudPulse
 ```
 
 2. Install Python dependencies:
