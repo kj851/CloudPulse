@@ -5,7 +5,9 @@ Launches Shiny R app in a native desktop window using PyQt5
 """
 
 import sys
+import os
 import subprocess
+import threading
 from pathlib import Path
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QProgressBar
 from PyQt5.QtWebEngineWidgets import QWebEngineView
@@ -18,8 +20,9 @@ class FinOpsApp(QMainWindow):
         self.shiny_process = None
         self.port = 3456
         self.localhost_url = f"http://127.0.0.1:{self.port}"
-        self.max_retries = 30
+        self.max_retries = 60
         self.retry_count = 0
+        self.is_root = os.geteuid() == 0 if hasattr(os, 'geteuid') else False
         
         # App config
         self.setWindowTitle("FinOps Dashboard")
@@ -42,29 +45,30 @@ class FinOpsApp(QMainWindow):
         # Timer to check if server is ready
         self.check_timer = QTimer()
         self.check_timer.timeout.connect(self.check_server_ready)
-        self.check_timer.start(1000)  # Check every second
+        self.check_timer.start(500)  # Check every 500ms
     
     def setup_loading_screen(self):
         """Display loading screen while server starts"""
         widget = QWidget()
         layout = QVBoxLayout()
         
-        label = QLabel("Starting FinOps Dashboard...")
-        label.setAlignment(Qt.AlignCenter)
+        self.loading_label = QLabel("Starting FinOps Dashboard...")
+        self.loading_label.setAlignment(Qt.AlignCenter)
         font = QFont()
         font.setPointSize(14)
-        label.setFont(font)
+        self.loading_label.setFont(font)
         
         progress = QProgressBar()
         progress.setRange(0, 0)  # Indeterminate progress
         
         layout.addStretch()
-        layout.addWidget(label)
+        layout.addWidget(self.loading_label)
         layout.addWidget(progress)
         layout.addStretch()
         
         widget.setLayout(layout)
         self.setCentralWidget(widget)
+        self.show()
     
     def start_shiny_server(self):
         """Start the Shiny R server"""
@@ -75,28 +79,52 @@ class FinOpsApp(QMainWindow):
             return
         
         try:
-            # Start Shiny server as subprocess
-            r_cmd = f"""
-            Rscript -e "
-            library(shiny)
-            shiny::runApp('{app_path}', 
-                         host='127.0.0.1', 
-                         port={self.port}, 
-                         launch.browser=FALSE)
-            "
-            """
+            # Use environment to set flags before starting
+            env = os.environ.copy()
+            if self.is_root:
+                env['QTWEBENGINE_CHROMIUM_FLAGS'] = '--no-sandbox --disable-gpu'
+            
+            # Simpler approach: use Rscript with a file
+            r_script_path = Path(__file__).parent / ".shiny_launcher.R"
+            r_script = f"""
+suppressPackageStartupMessages({{
+  library(shiny)
+}})
+shiny::runApp('{app_path}', 
+             host='127.0.0.1', 
+             port={self.port}, 
+             launch.browser=FALSE)
+"""
+            r_script_path.write_text(r_script)
             
             self.shiny_process = subprocess.Popen(
-                r_cmd,
-                shell=True,
+                ['Rscript', str(r_script_path)],
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                env=env
             )
             
             print(f"[FinOps] Shiny server started (PID: {self.shiny_process.pid})")
+            
+            # Start a thread to capture output
+            output_thread = threading.Thread(target=self._capture_server_output, daemon=True)
+            output_thread.start()
+            
         except Exception as e:
             self.show_error(f"Failed to start Shiny server: {e}")
+    
+    def _capture_server_output(self):
+        """Capture and log server output"""
+        try:
+            for line in iter(self.shiny_process.stdout.readline, ''):
+                if line:
+                    line = line.strip()
+                    if line:
+                        print(f"[Shiny] {line}")
+        except:
+            pass
     
     def check_server_ready(self):
         """Check if Shiny server is ready to accept connections"""
@@ -117,13 +145,29 @@ class FinOpsApp(QMainWindow):
             pass
         
         self.retry_count += 1
+        # Update loading screen with progress
+        self.loading_label.setText(f"Starting FinOps Dashboard... ({self.retry_count}s)")
+        
         if self.retry_count >= self.max_retries:
             self.check_timer.stop()
-            self.show_error("Failed to connect to Shiny server after 30 seconds")
+            # Try to get last few lines of output
+            error_msg = f"Failed to connect to Shiny server after {self.max_retries} seconds.\n\n"
+            error_msg += "Please ensure:\n"
+            error_msg += "1. All R packages are installed\n"
+            error_msg += "2. No other app is using port 3456\n"
+            error_msg += "3. R and Shiny are properly configured"
+            self.show_error(error_msg)
     
     def load_dashboard(self):
         """Load the dashboard in QWebEngineView"""
         browser = QWebEngineView()
+        
+        # Configure WebEngine settings
+        settings = browser.settings()
+        settings.setAttribute(settings.PluginsEnabled, True)
+        settings.setAttribute(settings.DomStorageEnabled, True)
+        settings.setAttribute(settings.LocalStorageEnabled, True)
+        
         browser.load(QUrl(self.localhost_url))
         self.setCentralWidget(browser)
         self.show()
@@ -151,11 +195,23 @@ class FinOpsApp(QMainWindow):
             except subprocess.TimeoutExpired:
                 self.shiny_process.kill()
             print("[FinOps] Shiny server stopped")
+        
+        # Clean up temporary script
+        try:
+            temp_script = Path(__file__).parent / ".shiny_launcher.R"
+            if temp_script.exists():
+                temp_script.unlink()
+        except:
+            pass
     
     def __del__(self):
         self.cleanup()
 
 def main():
+    # Set Chromium flags BEFORE creating QApplication if running as root
+    if hasattr(os, 'geteuid') and os.geteuid() == 0:
+        os.environ['QTWEBENGINE_CHROMIUM_FLAGS'] = '--no-sandbox --disable-gpu'
+    
     app = QApplication(sys.argv)
     window = FinOpsApp()
     sys.exit(app.exec_())

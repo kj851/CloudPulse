@@ -1,6 +1,6 @@
 # FinOps Desktop App - Setup & Deployment
 
-## Quick Start (Ubuntu/Linux)
+## Quick Start (Ubuntu)
 
 ### 1. Install Python Dependencies
 ```bash
@@ -43,7 +43,7 @@ pyinstaller --onefile \
   --add-data="FInOpsApp.R:." \
   --add-data="data:data" \
   --hidden-import=PyQt5.QtWebEngineWidgets \
-  app_launcher.py
+  lib/app_launcher.py
 ```
 
 The executable will be in `dist/FinOpsDashboard`
@@ -138,5 +138,3 @@ To remove the desktop app:
 rm -rf /path/to/dashboard-tips
 pip3 uninstall PyQt5 PyQtWebEngine
 ```
-
-R packages remain installed (safe to keep).

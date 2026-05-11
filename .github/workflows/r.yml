@@ -19,10 +19,10 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        r-version: ['3.6.3', '4.1.1']
+        r-version: ['4.2', '4.3']
 
     steps:
       - uses: actions/checkout@v4
@@ -30,10 +30,22 @@ jobs:
         uses: r-lib/actions/setup-r@f57f1301a053485946083d7a45022b278929a78a
         with:
           r-version: ${{ matrix.r-version }}
-      - name: Install dependencies
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev libcurl4-openssl-dev libxml2-dev libpq-dev
+      - name: Install R dependencies
         run: |
           install.packages(c("remotes", "rcmdcheck"))
-          remotes::install_deps(dependencies = TRUE)
+          pkgs <- c(
+            "shiny", "plotly", "dplyr", "DT", "ggridges", "ggplot2", "bslib",
+            "forecast", "prophet", "future",
+            "aws.s3",
+            "AzureRMR", "AzureAuth", "AzureStor",
+            "googleAuthR", "googleCloudStorageR", "bigrquery", "httr", "jsonlite",
+            "DBI", "RPostgres", "keyring"
+          )
+          install.packages(pkgs, dependencies = TRUE)
         shell: Rscript {0}
       - name: Check
         run: rcmdcheck::rcmdcheck(args = "--no-manual", error_on = "error")

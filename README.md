@@ -1,64 +1,66 @@
-# CloudPulse
+# FinOps Dashboard
 
 ## Overview
 
-CloudPulse is a comprehensive tool designed to provide actionable insights and tips for optimizing Financial Operations (FinOps). It helps teams monitor, analyze, and improve cloud cost management through an intuitive dashboard interface. Uses Forcast R library to 
+FinOps is a desktop wrapper and dashboard for analyzing and optimizing cloud costs across AWS, Azure, and GCP. The app combines an R/Shiny backend with a small Python desktop launcher for a native experience.
 
 ## Features
 
 - Real-time cost monitoring
 - Budget alerts and notifications
-- Cost optimization recommendations
+- Cost optimization recommendations and tips
 - Interactive charts and graphs
 - Multi-cloud support (AWS, Azure, GCP)
-- User-friendly dashboard
 
-## Installation
+## Prerequisites
 
-### Prerequisites
+- Python 3.8+ with `PyQt5` and `PyQtWebEngine` (see `requirements.txt`)
+- R (4.x recommended) with packages listed in `install_R_packages.R`
 
-- Node.js (version 14 or higher)
-- npm or yarn
-
-### Steps
+## Installation & Run (local)
 
 1. Clone the repository:
-   ```
-   git clone https://github.com/yourusername/dashboard-tips.git
-   ```
 
-2. Navigate to the project directory:
-   ```
-   cd CloudPulse
-   ```
+```bash
+git clone <your-repo-url>
+cd FinOps
+```
 
-3. Install dependencies:
-   ```
-   npm install
-   ```
+2. Install Python dependencies:
 
-4. Start the application:
-   ```
-   npm start
-   ```
+```bash
+python3 -m pip install -r requirements.txt
+```
 
-The app will be available at `http://localhost:3000`.
+3. Install R package dependencies (see `install_R_packages.R`):
+
+```bash
+Rscript install_R_packages.R
+```
+
+4. Launch the app (desktop wrapper):
+
+```bash
+./run_app.sh
+```
+
+Alternatively, you can run the Shiny app directly from R:
+
+```r
+shiny::runApp('.')
+```
 
 ## Usage
 
-1. Log in with your credentials.
-2. Navigate through the dashboard to view cost breakdowns.
-3. Use the tips section to apply optimizations.
-4. Set up alerts for budget thresholds.
-
-## Configuration
-
-Configure your cloud providers in the settings panel. Supported providers include AWS, Azure, and GCP. Credentials are
-encrypted and stored securly.
+1. Use the desktop launcher to open the app window.
+2. Select cloud provider, query type, and date ranges in the sidebar.
+3. Enable forecasting or mock data for local testing.
 
 ## Contributing
 
-We welcome contributions! Please follow these steps:
+Contributions welcome — open issues or pull requests with improvements.
+
+Please follow these steps:
 
 1. Fork the repository.
 2. Create a feature branch.
@@ -67,7 +69,9 @@ We welcome contributions! Please follow these steps:
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
+3. Use the tips section to apply optimizations.
+4. Set up alerts for budget thresholds.
 
 ## Support
 

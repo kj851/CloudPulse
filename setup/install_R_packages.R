@@ -1,30 +1,24 @@
 #!/usr/bin/env Rscript
-# This script must be run with Rscript, not with 'bash'.
 # example:
 #   sudo Rscript install_R_packages.R
 
 options(repos = c(CRAN = "https://cloud.r-project.org"), timeout = 600)
 
 pkgs <- c(
-  # core app packages
-  "shiny","plotly","dplyr","DT","ggridges","ggplot2","bslib", # nolint
+  # Core Shiny UI/UX
+  "shiny","plotly","dplyr","DT","ggridges","ggplot2","bslib","shinycssloaders",
   # language server for editor/IDE
   "languageserver",
   # forecasting
   "forecast", "prophet", "future",
-  # forecast (ARIMA) required; prophet optional if you want Meta Prophet
   # AWS & specific paws service packages (install only required services)
   "aws.s3",
-  # Azure
   "AzureRMR","AzureAuth","AzureStor",
-  # GCP
   "googleAuthR","googleCloudStorageR","bigrquery","httr","jsonlite",
-  # DB and auth
   "DBI","RPostgres","keyring"
 )
 
-# Packages to skip because they are known 
-# to pull many deps or hang in some environments
+# Packages to skip because they are known
 skip_pkgs <- c("paws", "paws.analytics")
 
 failed_log <- "/tmp/install_R_failed.txt"
@@ -69,8 +63,7 @@ if (file.exists(failed_log)) {
   # ensure remotes available
   if (!requireNamespace("remotes", quietly = TRUE)) {
     message("Installing 'remotes' to enable GitHub installs...")
-    tryCatch(install.packages("remotes", dependencies = TRUE),
-             error = function(e) message("remotes install failed: ", conditionMessage(e)))
+    tryCatch(install.packages("remotes", dependencies = TRUE), error = function(e) message("remotes install failed: ", conditionMessage(e)))
   }
   # prefer explicit per-package GitHub repos for the known failing packages
   gh_targets <- c(
@@ -92,15 +85,12 @@ if (file.exists(failed_log)) {
           available after install: ", pkg)
         }
       }, error = function(e) {
-        message("Failed to install ",pkg, " from GitHub: ", conditionMessage(e))
+        message("Failed to install ", pkg, " from GitHub: ", conditionMessage(e))
       })
     } else {
       message(pkg, " is already available after initial install attempt")
     }
   }
-
-  # If any paws.* still missing, also try installing the paws meta-package 
-  # from GitHub as a last resort
   remaining_paws <- grep("^paws\\.", failed, value = TRUE)
   if (length(remaining_paws) > 0) {
     message("Attempting a GitHub install of 
