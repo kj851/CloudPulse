@@ -1,6 +1,7 @@
 # Azure data access and processing functions for Shiny app
 # with security validation and error handling
-# Connect to Azure SQL Database, retrieve metadata, usage, and cost data
+# Connect to Azure SQL Database, retrieve metadata, usage, and cost data.
+# Author: Keaton Szantho
 
 library(shiny)
 library(DBI)

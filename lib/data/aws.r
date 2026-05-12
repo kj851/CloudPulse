@@ -1,7 +1,8 @@
 # AWS data access and processing functions for Shiny app
 # with security validation and error handling
-# S3, RDS, CloudWatch, Cost Explorer. Connect to RDS, 
-# retrieve metadata, usage, and cost data
+# S3, RDS, CloudWatch, Cost Explorer. Connect to RDS,
+# retrieve metadata, usage, and cost data.
+# Author: Keaton Szantho
 
 library(shiny)
 library(DBI)

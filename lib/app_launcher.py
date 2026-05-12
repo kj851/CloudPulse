@@ -1,14 +1,25 @@
 #!/usr/bin/env python3
 """
-FinOps Dashboard Desktop Wrapper
-Launches Shiny R app in a native desktop window using PyQt5
+CloudPulse Desktop Wrapper:
+Launches Shiny R app in a native desktop window using PyQt5 then
+Lauches the Shiny server as a subprocess, monitors its output, 
+and loads the dashboard in a QWebEngineView.
+Author: Keaton Szantho
+
 """
 
 import sys
 import os
 import subprocess
 import threading
+import time
+import socket
 from pathlib import Path
+
+# Force unbuffered output
+sys.stdout = open(sys.stdout.fileno(), mode='w', buffering=1)
+sys.stderr = open(sys.stderr.fileno(), mode='w', buffering=1)
+
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QProgressBar
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtCore import Qt, QTimer, QUrl
@@ -18,11 +29,14 @@ class FinOpsApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.shiny_process = None
+        self.browser = None
         self.port = 3456
         self.localhost_url = f"http://127.0.0.1:{self.port}"
         self.max_retries = 60
         self.retry_count = 0
         self.is_root = os.geteuid() == 0 if hasattr(os, 'geteuid') else False
+        self.server_ready_time = None
+        self.connection_time = None
         
         # App config
         self.setWindowTitle("FinOps Dashboard")
@@ -39,20 +53,26 @@ class FinOpsApp(QMainWindow):
         # Loading screen
         self.setup_loading_screen()
         
+        # Kill any lingering processes on the port
+        self._kill_port_process()
+        time.sleep(0.5)
+        
         # Start Shiny server
+        print("[FinOps] Starting Shiny server...")
+        self.start_time = time.time()
         self.start_shiny_server()
         
         # Timer to check if server is ready
         self.check_timer = QTimer()
         self.check_timer.timeout.connect(self.check_server_ready)
-        self.check_timer.start(500)  # Check every 500ms
+        self.check_timer.start(200)  # Check more frequently
     
     def setup_loading_screen(self):
         """Display loading screen while server starts"""
         widget = QWidget()
         layout = QVBoxLayout()
         
-        self.loading_label = QLabel("Starting FinOps Dashboard...")
+        self.loading_label = QLabel("Starting CloudPulse Dashboard...")
         self.loading_label.setAlignment(Qt.AlignCenter)
         font = QFont()
         font.setPointSize(14)
@@ -70,6 +90,19 @@ class FinOpsApp(QMainWindow):
         self.setCentralWidget(widget)
         self.show()
     
+    def _kill_port_process(self):
+        """Kill any process using the configured port"""
+        try:
+            subprocess.run(
+                ['fuser', '-k', f'{self.port}/tcp'],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=2
+            )
+            print(f"[FinOps] Cleaned up port {self.port}")
+        except:
+            pass
+    
     def start_shiny_server(self):
         """Start the Shiny R server"""
         app_path = Path(__file__).parent / "FInOpsApp.R"
@@ -79,17 +112,22 @@ class FinOpsApp(QMainWindow):
             return
         
         try:
-            # Use environment to set flags before starting
             env = os.environ.copy()
-            if self.is_root:
-                env['QTWEBENGINE_CHROMIUM_FLAGS'] = '--no-sandbox --disable-gpu'
+            # Always use these flags for better compatibility
+            env['QTWEBENGINE_CHROMIUM_FLAGS'] = '--no-sandbox --disable-gpu'
             
-            # Simpler approach: use Rscript with a file
             r_script_path = Path(__file__).parent / ".shiny_launcher.R"
             r_script = f"""
+options(warn=-1)
 suppressPackageStartupMessages({{
   library(shiny)
 }})
+
+options(shiny.port={self.port})
+options(shiny.host='127.0.0.1')
+options(shiny.maxRequestSize=100*1024^2)
+
+cat('[Shiny] Server initializing...\n')
 shiny::runApp('{app_path}', 
              host='127.0.0.1', 
              port={self.port}, 
@@ -108,7 +146,6 @@ shiny::runApp('{app_path}',
             
             print(f"[FinOps] Shiny server started (PID: {self.shiny_process.pid})")
             
-            # Start a thread to capture output
             output_thread = threading.Thread(target=self._capture_server_output, daemon=True)
             output_thread.start()
             
@@ -122,35 +159,40 @@ shiny::runApp('{app_path}',
                 if line:
                     line = line.strip()
                     if line:
-                        print(f"[Shiny] {line}")
+                        elapsed = time.time() - self.start_time
+                        print(f"[{elapsed:.1f}s] [Shiny] {line}")
+                        if "Listening on" in line:
+                            self.server_ready_time = time.time()
         except:
             pass
     
     def check_server_ready(self):
         """Check if Shiny server is ready to accept connections"""
-        import socket
-        
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(1)
+            sock.settimeout(0.5)
             result = sock.connect_ex(('127.0.0.1', self.port))
             sock.close()
             
             if result == 0:
-                # Server is ready
-                self.check_timer.stop()
-                self.load_dashboard()
+                if not self.connection_time:
+                    self.connection_time = time.time()
+                    elapsed = self.connection_time - self.start_time
+                    print(f"[{elapsed:.1f}s] [FinOps] Port {self.port} is now accepting connections")
+                
+                if time.time() - self.connection_time > 0.5:
+                    self.check_timer.stop()
+                    self.load_dashboard()
                 return
         except:
             pass
         
         self.retry_count += 1
-        # Update loading screen with progress
-        self.loading_label.setText(f"Starting FinOps Dashboard... ({self.retry_count}s)")
+        elapsed = time.time() - self.start_time
+        self.loading_label.setText(f"Starting FinOps Dashboard... ({elapsed:.0f}s)")
         
         if self.retry_count >= self.max_retries:
             self.check_timer.stop()
-            # Try to get last few lines of output
             error_msg = f"Failed to connect to Shiny server after {self.max_retries} seconds.\n\n"
             error_msg += "Please ensure:\n"
             error_msg += "1. All R packages are installed\n"
@@ -160,23 +202,61 @@ shiny::runApp('{app_path}',
     
     def load_dashboard(self):
         """Load the dashboard in QWebEngineView"""
-        browser = QWebEngineView()
+        elapsed = time.time() - self.start_time
+        print(f"[{elapsed:.1f}s] [CloudPulse] Loading dashboard in browser...")
+        sys.stdout.flush()
         
-        # Configure WebEngine settings
-        settings = browser.settings()
+        # Create browser
+        elapsed = time.time() - self.start_time
+        print(f"[{elapsed:.1f}s] [CloudPulse] Creating QWebEngineView...")
+        sys.stdout.flush()
+        self.browser = QWebEngineView()
+        
+        elapsed = time.time() - self.start_time
+        print(f"[{elapsed:.1f}s] [CloudPulse] Getting settings object...")
+        sys.stdout.flush()
+        settings = self.browser.settings()
+        
+        elapsed = time.time() - self.start_time
+        print(f"[{elapsed:.1f}s] [CloudPulse] Setting PluginsEnabled...")
+        sys.stdout.flush()
         settings.setAttribute(settings.PluginsEnabled, True)
-        settings.setAttribute(settings.DomStorageEnabled, True)
-        settings.setAttribute(settings.LocalStorageEnabled, True)
         
-        browser.load(QUrl(self.localhost_url))
-        self.setCentralWidget(browser)
+        elapsed = time.time() - self.start_time
+        print(f"[{elapsed:.1f}s] [CloudPulse] Setting central widget...")
+        sys.stdout.flush()
+        self.setCentralWidget(self.browser)
+        
+        elapsed = time.time() - self.start_time
+        print(f"[{elapsed:.1f}s] [CloudPulse] Showing window...")
+        sys.stdout.flush()
         self.show()
-        print(f"[FinOps] Dashboard loaded: {self.localhost_url}")
+        
+        # Use a timer to load the page after event loop has processed  
+        elapsed = time.time() - self.start_time
+        print(f"[{elapsed:.1f}s] [CloudPulse] Scheduling page load via timer...")
+        sys.stdout.flush()
+        
+        load_timer = QTimer()
+        load_timer.setSingleShot(True)
+        load_timer.timeout.connect(self.do_page_load)
+        load_timer.start(100)  # Give event loop 100ms to process
+    
+    def do_page_load(self):
+        """Actually load the page - called after Qt event loop has processed"""
+        elapsed = time.time() - self.start_time
+        print(f"[{elapsed:.1f}s] [CloudPulse] Timer fired, calling browser.load()...")
+        sys.stdout.flush()
+        self.browser.load(QUrl(self.localhost_url))
+        
+        elapsed = time.time() - self.start_time
+        print(f"[{elapsed:.1f}s] [CloudPulse] Dashboard setup complete: {self.localhost_url}")
+        sys.stdout.flush()
     
     def show_error(self, message):
         """Display error and exit"""
         from PyQt5.QtWidgets import QMessageBox
-        QMessageBox.critical(self, "FinOps Dashboard - Error", message)
+        QMessageBox.critical(self, "CloudPulse Dashboard - Error", message)
         self.cleanup()
         sys.exit(1)
     
@@ -196,7 +276,6 @@ shiny::runApp('{app_path}',
                 self.shiny_process.kill()
             print("[FinOps] Shiny server stopped")
         
-        # Clean up temporary script
         try:
             temp_script = Path(__file__).parent / ".shiny_launcher.R"
             if temp_script.exists():
@@ -208,13 +287,18 @@ shiny::runApp('{app_path}',
         self.cleanup()
 
 def main():
-    # Set Chromium flags BEFORE creating QApplication if running as root
-    if hasattr(os, 'geteuid') and os.geteuid() == 0:
-        os.environ['QTWEBENGINE_CHROMIUM_FLAGS'] = '--no-sandbox --disable-gpu'
-    
-    app = QApplication(sys.argv)
-    window = FinOpsApp()
-    sys.exit(app.exec_())
+    try:
+        if hasattr(os, 'geteuid') and os.geteuid() == 0:
+            os.environ['QTWEBENGINE_CHROMIUM_FLAGS'] = '--no-sandbox --disable-gpu'
+        
+        app = QApplication(sys.argv)
+        window = FinOpsApp()
+        sys.exit(app.exec_())
+    except Exception as e:
+        print(f"[FinOps] ERROR: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

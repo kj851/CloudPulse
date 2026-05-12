@@ -1,3 +1,11 @@
+# CloudPulse FinOps Dashboard - Main Shiny App
+# This app provides an interface for querying and visualizing
+# cloud cost and usage data across multiple CSPs AWS, Azure, and GCP.
+# It includes a credential entry page, dynamic query configuration,
+# and interactive visualizations with forecasting capabilities.
+# Sercure credential handling and error management are implemented.
+# Author: Keaton Szantho
+
 library(shiny)
 library(plotly)
 library(dplyr)
@@ -10,7 +18,6 @@ library(forecast)
 library(DBI)
 # for async
 if (requireNamespace("future", quietly = TRUE)) {
-  # use multisession backend for non-blocking futures in Shiny
   future::plan(future::multisession)
 } else {
   message("'future' package not available; async futures disabled. Install 'future' to enable.")
@@ -24,14 +31,14 @@ if (!requireNamespace("shinycssloaders", quietly = TRUE)) {
   withSpinner <- function(expr, ...) expr
 }
 
-# Source cloud scripts
+# Source cloud scripts mock and real implementations
 source("data/aws.r")
 source("data/azure.r")
 source("data/GCP.r")
 source("data/mock.r")
 source("data/forecast.r")
 
-# Modern theme configuration
+# Theme config
 modern_theme <- bs_theme(
   preset = "bootstrap",
   primary = "#0D6EFD",
@@ -410,10 +417,7 @@ ui <- function() {
   page_navbar(
     title = "CloudPulse FinOps",
     theme = modern_theme,
-    
     uiOutput("main_ui"),
-    
-    # Hide navbar when on login
     tags$head(
       tags$style(HTML("
         .navbar { display: none; }

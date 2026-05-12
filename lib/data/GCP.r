@@ -1,7 +1,8 @@
 # GCP data access and processing functions for Shiny app
 # with security validation and error handling
 # Functions to connect to Cloud SQL, retrieve metadata, usage,
-# and cost data using GCP APIs and BigQuery
+# and cost data using GCP APIs and BigQuery.
+# Author: Keaton Szantho
 
 library(shiny)
 library(DBI)

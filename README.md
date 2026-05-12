@@ -1,4 +1,4 @@
-# FinOps Dashboard
+# CloudPulse
 
 ## Overview
 

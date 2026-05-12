@@ -1,4 +1,9 @@
-# For testing
+# For testing and development without real cloud connections,
+# we can use these mock functions to simulate data retrieval.
+# This allows us to build and test the Shiny app's UI and
+# logic without needing actual cloud useage.
+# Author: Keaton Szantho
+
 get_mock_instances <- function(provider) {
   if (provider == "AWS") {
     c("aws-db-1", "aws-db-2")

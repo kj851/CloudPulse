@@ -1,6 +1,8 @@
 #!/bin/bash
 # FinOps Dashboard Launcher
 # Run this to launch the desktop app
+# This script checks for dependencies, then starts the PyQt5 app which loads the Shiny dashboard.
+# Author: Keaton Szantho
 
 set -e
 

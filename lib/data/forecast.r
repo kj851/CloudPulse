@@ -1,10 +1,9 @@
+# Forecasting functions for CloudPulse FinOps Dashboard
+# This module provides functions to prepare time series data, find anomalies,
+# and generate forecasts using Prophet, ARIMA, and Exponential Smoothing.
+
 library(dplyr)
 
-# ============================================================================
-# Comprehensive Forecasting & Analysis Module for FinOps
-# ============================================================================
-
-# Validate and prepare time series data
 prepare_time_series <- function(df, timestamp_col = "timestamp", value_col = "cpu_avg", 
                                 frequency = "day", min_observations = 14) {
   if (is.null(df) || nrow(df) < min_observations) {

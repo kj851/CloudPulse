@@ -1,4 +1,4 @@
-# FinOps Desktop App - Setup & Deployment
+# CloudPulse Desktop App - Setup & Deployment
 
 ## Quick Start (Ubuntu)
 
