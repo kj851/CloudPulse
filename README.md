@@ -32,10 +32,10 @@ cd CloudPulse
 python3 -m pip install -r requirements.txt
 ```
 
-3. Install R package dependencies (see `install_R_packages.R`):
+3. Install R package dependencies using the setup helper:
 
 ```bash
-Rscript install_R_packages.R
+./setup/install_R_packages.sh
 ```
 
 4. Launch the app (desktop wrapper):

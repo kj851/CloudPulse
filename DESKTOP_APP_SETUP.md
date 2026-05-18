@@ -65,7 +65,7 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 COPY . .
-RUN sudo Rscript install_R_packages.R
+RUN Rscript setup/install_R_packages.R
 
 EXPOSE 3456
 CMD ["./launch_app.sh"]
@@ -114,7 +114,7 @@ sudo apt-get install r-base
 
 ### "Shiny package not found"
 ```bash
-sudo Rscript install_R_packages.R
+sudo ./setup/install_R_packages.sh
 ```
 
 ### App won't launch

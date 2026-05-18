@@ -20,9 +20,14 @@ from pathlib import Path
 sys.stdout = open(sys.stdout.fileno(), mode='w', buffering=1)
 sys.stderr = open(sys.stderr.fileno(), mode='w', buffering=1)
 
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QProgressBar
-from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtCore import Qt, QTimer, QUrl
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QProgressBar
+from PyQt5.QtGui import QIcon, QFont
+
+# CRITICAL: Must be set BEFORE WebEngineWidgets is imported or QApplication is created
+QApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
+
+from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtGui import QIcon, QFont
 
 class FinOpsApp(QMainWindow):
@@ -288,8 +293,8 @@ shiny::runApp('{app_path}',
 
 def main():
     try:
-        if hasattr(os, 'geteuid') and os.geteuid() == 0:
-            os.environ['QTWEBENGINE_CHROMIUM_FLAGS'] = '--no-sandbox --disable-gpu'
+        # Set GPU flags EARLY, before Qt initialization
+        os.environ['QTWEBENGINE_CHROMIUM_FLAGS'] = '--no-sandbox --disable-gpu --use-gl=swiftshader'
         
         app = QApplication(sys.argv)
         window = FinOpsApp()

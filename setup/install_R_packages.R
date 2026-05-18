@@ -1,12 +1,31 @@
 #!/usr/bin/env Rscript
 # example:
-#   sudo Rscript install_R_packages.R
+#   sudo Rscript setup/install_R_packages.R
+#   ./setup/install_R_packages.sh
 
 options(repos = c(CRAN = "https://cloud.r-project.org"), timeout = 600)
+
+default_lib <- .libPaths()[1]
+user_lib <- Sys.getenv("R_LIBS_USER", unset = file.path(Sys.getenv("HOME"), "R", "library"))
+if (!dir.exists(user_lib)) {
+  dir.create(user_lib, recursive = TRUE, showWarnings = FALSE)
+}
+
+install_lib <- if (file.access(default_lib, 2) == 0L) {
+  default_lib
+} else if (file.access(user_lib, 2) == 0L) {
+  user_lib
+} else {
+  stop("No writable R library path is available. Please run this script with a writable R library or set R_LIBS_USER.")
+}
+.libPaths(c(install_lib, .libPaths()))
+message("Installing missing packages to library: ", install_lib)
 
 pkgs <- c(
   # Core Shiny UI/UX
   "shiny","plotly","dplyr","DT","ggridges","ggplot2","bslib","shinycssloaders",
+  # tooling
+  "remotes","rcmdcheck",
   # language server for editor/IDE
   "languageserver",
   # forecasting
@@ -33,15 +52,15 @@ install_if_missing <- function(pkg, retries = 2) {
     message("Installing ", pkg, " ...")
     for (i in seq_len(retries)) {
       tryCatch({
-        install.packages(pkg, dependencies = TRUE, 
-                         Ncpus = max(1, parallel::detectCores() - 1))
+        install.packages(pkg, dependencies = TRUE,
+                         Ncpus = max(1, parallel::detectCores() - 1),
+                         lib = install_lib)
         if (requireNamespace(pkg, quietly = TRUE)) {
           message("Installed ", pkg)
           return(invisible(TRUE))
         }
       }, error = function(e) {
-        message(sprintf("Attempt %d failed for 
-        %s: %s", i, pkg, conditionMessage(e)))
+        message(sprintf("Attempt %d failed for %s: %s", i, pkg, conditionMessage(e)))
       })
       Sys.sleep(2) # brief pause between retries
     }

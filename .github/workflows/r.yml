@@ -36,17 +36,8 @@ jobs:
           sudo apt-get install -y libssl-dev libcurl4-openssl-dev libxml2-dev libpq-dev
       - name: Install R dependencies
         run: |
-          install.packages(c("remotes", "rcmdcheck"))
-          pkgs <- c(
-            "shiny", "plotly", "dplyr", "DT", "ggridges", "ggplot2", "bslib",
-            "forecast", "prophet", "future",
-            "aws.s3",
-            "AzureRMR", "AzureAuth", "AzureStor",
-            "googleAuthR", "googleCloudStorageR", "bigrquery", "httr", "jsonlite",
-            "DBI", "RPostgres", "keyring"
-          )
-          install.packages(pkgs, dependencies = TRUE)
-        shell: Rscript {0}
+          ./setup/install_R_packages.sh
+        shell: bash
       - name: Check
         run: rcmdcheck::rcmdcheck(args = "--no-manual", error_on = "error")
         shell: Rscript {0}

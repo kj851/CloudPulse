@@ -25,7 +25,7 @@ PYCHECK
 # Check R and Shiny
 if ! Rscript -e "if (!requireNamespace('shiny', quietly = TRUE)) stop('Shiny not found'); cat('✓ R and Shiny found\n')" 2>/dev/null; then
   echo "✗ R or Shiny not available"
-  echo "Install with: sudo Rscript install_R_packages.R"
+  echo "Install with: sudo ../setup/install_R_packages.sh"
   exit 1
 fi
 
