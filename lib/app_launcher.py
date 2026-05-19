@@ -1,309 +1,354 @@
 #!/usr/bin/env python3
+#!/usr/bin/env python3
 """
-CloudPulse Desktop Wrapper:
-Launches Shiny R app in a native desktop window using PyQt5 then
-Lauches the Shiny server as a subprocess, monitors its output, 
-and loads the dashboard in a QWebEngineView.
+CloudPulse Desktop Launcher
+Starts the Shiny R server as a subprocess, shows a tkinter loading window,
+then opens the dashboard in the system browser (Windows/Linux/macOS).
+No PyQt5 or GPU required.
+ 
 Author: Keaton Szantho
-
 """
-
-import sys
+ 
 import os
 import subprocess
 import threading
 import time
 import socket
+import webbrowser
+import tkinter as tk
+from tkinter import ttk, messagebox
 from pathlib import Path
 
-# Force unbuffered output
-sys.stdout = open(sys.stdout.fileno(), mode='w', buffering=1)
-sys.stderr = open(sys.stderr.fileno(), mode='w', buffering=1)
-
-from PyQt5.QtCore import Qt, QTimer, QUrl
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QProgressBar
-from PyQt5.QtGui import QIcon, QFont
-
-# CRITICAL: Must be set BEFORE WebEngineWidgets is imported or QApplication is created
-QApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
-
-from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtGui import QIcon, QFont
-
-class FinOpsApp(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.shiny_process = None
-        self.browser = None
-        self.port = 3456
-        self.localhost_url = f"http://127.0.0.1:{self.port}"
-        self.max_retries = 60
-        self.retry_count = 0
-        self.is_root = os.geteuid() == 0 if hasattr(os, 'geteuid') else False
-        self.server_ready_time = None
-        self.connection_time = None
-        
-        # App config
-        self.setWindowTitle("FinOps Dashboard")
-        self.setGeometry(100, 100, 1400, 900)
-        
-        # Icon (optional)
-        try:
-            icon_path = Path(__file__).parent / "assets" / "icon.png"
-            if icon_path.exists():
-                self.setWindowIcon(QIcon(str(icon_path)))
-        except:
-            pass
-        
-        # Loading screen
-        self.setup_loading_screen()
-        
-        # Kill any lingering processes on the port
-        self._kill_port_process()
-        time.sleep(0.5)
-        
-        # Start Shiny server
-        print("[FinOps] Starting Shiny server...")
-        self.start_time = time.time()
-        self.start_shiny_server()
-        
-        # Timer to check if server is ready
-        self.check_timer = QTimer()
-        self.check_timer.timeout.connect(self.check_server_ready)
-        self.check_timer.start(200)  # Check more frequently
-    
-    def setup_loading_screen(self):
-        """Display loading screen while server starts"""
-        widget = QWidget()
-        layout = QVBoxLayout()
-        
-        self.loading_label = QLabel("Starting CloudPulse Dashboard...")
-        self.loading_label.setAlignment(Qt.AlignCenter)
-        font = QFont()
-        font.setPointSize(14)
-        self.loading_label.setFont(font)
-        
-        progress = QProgressBar()
-        progress.setRange(0, 0)  # Indeterminate progress
-        
-        layout.addStretch()
-        layout.addWidget(self.loading_label)
-        layout.addWidget(progress)
-        layout.addStretch()
-        
-        widget.setLayout(layout)
-        self.setCentralWidget(widget)
-        self.show()
-    
-    def _kill_port_process(self):
-        """Kill any process using the configured port"""
-        try:
-            subprocess.run(
-                ['fuser', '-k', f'{self.port}/tcp'],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=2
-            )
-            print(f"[FinOps] Cleaned up port {self.port}")
-        except:
-            pass
-    
-    def start_shiny_server(self):
-        """Start the Shiny R server"""
-        app_path = Path(__file__).parent / "FInOpsApp.R"
-        
-        if not app_path.exists():
-            self.show_error(f"App not found: {app_path}")
-            return
-        
-        try:
-            env = os.environ.copy()
-            # Always use these flags for better compatibility
-            env['QTWEBENGINE_CHROMIUM_FLAGS'] = '--no-sandbox --disable-gpu'
-            
-            r_script_path = Path(__file__).parent / ".shiny_launcher.R"
-            r_script = f"""
-options(warn=-1)
-suppressPackageStartupMessages({{
-  library(shiny)
-}})
-
-options(shiny.port={self.port})
-options(shiny.host='127.0.0.1')
-options(shiny.maxRequestSize=100*1024^2)
-
-cat('[Shiny] Server initializing...\n')
-shiny::runApp('{app_path}', 
-             host='127.0.0.1', 
-             port={self.port}, 
-             launch.browser=FALSE)
-"""
-            r_script_path.write_text(r_script)
-            
-            self.shiny_process = subprocess.Popen(
-                ['Rscript', str(r_script_path)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-                env=env
-            )
-            
-            print(f"[FinOps] Shiny server started (PID: {self.shiny_process.pid})")
-            
-            output_thread = threading.Thread(target=self._capture_server_output, daemon=True)
-            output_thread.start()
-            
-        except Exception as e:
-            self.show_error(f"Failed to start Shiny server: {e}")
-    
-    def _capture_server_output(self):
-        """Capture and log server output"""
-        try:
-            for line in iter(self.shiny_process.stdout.readline, ''):
-                if line:
-                    line = line.strip()
-                    if line:
-                        elapsed = time.time() - self.start_time
-                        print(f"[{elapsed:.1f}s] [Shiny] {line}")
-                        if "Listening on" in line:
-                            self.server_ready_time = time.time()
-        except:
-            pass
-    
-    def check_server_ready(self):
-        """Check if Shiny server is ready to accept connections"""
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(0.5)
-            result = sock.connect_ex(('127.0.0.1', self.port))
-            sock.close()
-            
-            if result == 0:
-                if not self.connection_time:
-                    self.connection_time = time.time()
-                    elapsed = self.connection_time - self.start_time
-                    print(f"[{elapsed:.1f}s] [FinOps] Port {self.port} is now accepting connections")
-                
-                if time.time() - self.connection_time > 0.5:
-                    self.check_timer.stop()
-                    self.load_dashboard()
-                return
-        except:
-            pass
-        
-        self.retry_count += 1
-        elapsed = time.time() - self.start_time
-        self.loading_label.setText(f"Starting FinOps Dashboard... ({elapsed:.0f}s)")
-        
-        if self.retry_count >= self.max_retries:
-            self.check_timer.stop()
-            error_msg = f"Failed to connect to Shiny server after {self.max_retries} seconds.\n\n"
-            error_msg += "Please ensure:\n"
-            error_msg += "1. All R packages are installed\n"
-            error_msg += "2. No other app is using port 3456\n"
-            error_msg += "3. R and Shiny are properly configured"
-            self.show_error(error_msg)
-    
-    def load_dashboard(self):
-        """Load the dashboard in QWebEngineView"""
-        elapsed = time.time() - self.start_time
-        print(f"[{elapsed:.1f}s] [CloudPulse] Loading dashboard in browser...")
-        sys.stdout.flush()
-        
-        # Create browser
-        elapsed = time.time() - self.start_time
-        print(f"[{elapsed:.1f}s] [CloudPulse] Creating QWebEngineView...")
-        sys.stdout.flush()
-        self.browser = QWebEngineView()
-        
-        elapsed = time.time() - self.start_time
-        print(f"[{elapsed:.1f}s] [CloudPulse] Getting settings object...")
-        sys.stdout.flush()
-        settings = self.browser.settings()
-        
-        elapsed = time.time() - self.start_time
-        print(f"[{elapsed:.1f}s] [CloudPulse] Setting PluginsEnabled...")
-        sys.stdout.flush()
-        settings.setAttribute(settings.PluginsEnabled, True)
-        
-        elapsed = time.time() - self.start_time
-        print(f"[{elapsed:.1f}s] [CloudPulse] Setting central widget...")
-        sys.stdout.flush()
-        self.setCentralWidget(self.browser)
-        
-        elapsed = time.time() - self.start_time
-        print(f"[{elapsed:.1f}s] [CloudPulse] Showing window...")
-        sys.stdout.flush()
-        self.show()
-        
-        # Use a timer to load the page after event loop has processed  
-        elapsed = time.time() - self.start_time
-        print(f"[{elapsed:.1f}s] [CloudPulse] Scheduling page load via timer...")
-        sys.stdout.flush()
-        
-        load_timer = QTimer()
-        load_timer.setSingleShot(True)
-        load_timer.timeout.connect(self.do_page_load)
-        load_timer.start(100)  # Give event loop 100ms to process
-    
-    def do_page_load(self):
-        """Actually load the page - called after Qt event loop has processed"""
-        elapsed = time.time() - self.start_time
-        print(f"[{elapsed:.1f}s] [CloudPulse] Timer fired, calling browser.load()...")
-        sys.stdout.flush()
-        self.browser.load(QUrl(self.localhost_url))
-        
-        elapsed = time.time() - self.start_time
-        print(f"[{elapsed:.1f}s] [CloudPulse] Dashboard setup complete: {self.localhost_url}")
-        sys.stdout.flush()
-    
-    def show_error(self, message):
-        """Display error and exit"""
-        from PyQt5.QtWidgets import QMessageBox
-        QMessageBox.critical(self, "CloudPulse Dashboard - Error", message)
-        self.cleanup()
-        sys.exit(1)
-    
-    def closeEvent(self, event):
-        """Handle window close event"""
-        self.cleanup()
-        event.accept()
-    
-    def cleanup(self):
-        """Gracefully shutdown Shiny server"""
-        if self.shiny_process and self.shiny_process.poll() is None:
-            print("[FinOps] Shutting down Shiny server...")
-            try:
-                self.shiny_process.terminate()
-                self.shiny_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.shiny_process.kill()
-            print("[FinOps] Shiny server stopped")
-        
-        try:
-            temp_script = Path(__file__).parent / ".shiny_launcher.R"
-            if temp_script.exists():
-                temp_script.unlink()
-        except:
-            pass
-    
-    def __del__(self):
-        self.cleanup()
-
-def main():
+PORT        = 3456
+MAX_WAIT_S  = 90          # seconds before exit
+POLL_MS     = 300         # ms between port-ready checks
+APP_TITLE   = "CloudPulse Dashboard"
+ 
+ 
+def find_rscript() -> str:
+    """Find Rscript executable, checking common Windows install paths."""
+    import shutil
+    # Try PATH first (works if R is already on PATH)
+    if shutil.which("Rscript"):
+        return "Rscript"
+    # Common Windows R install locations
+    import glob
+    patterns = [
+        r"C:\Program Files\R\R-*\bin\Rscript.exe",
+        r"C:\Program Files\R\R-*\bin\x64\Rscript.exe",
+        r"C:\Program Files (x86)\R\R-*\bin\Rscript.exe",
+        os.path.expanduser(r"~\AppData\Local\Programs\R\R-*\bin\Rscript.exe"),
+    ]
+    for pattern in patterns:
+        matches = sorted(glob.glob(pattern), reverse=True)  # newest version first
+        if matches:
+            return matches[0]
+    raise FileNotFoundError(
+        "Rscript.exe not found.\n\n"
+        "Install R from https://cran.r-project.org then re-run the app."
+    )
+ 
+ 
+def find_app_r() -> Path:
+    """Locate FInOpsApp.R relative to this script."""
+    candidates = [
+        Path(__file__).parent / "FInOpsApp.R",
+        Path(__file__).parent.parent / "FInOpsApp.R",
+        Path(__file__).parent / "lib" / "FInOpsApp.R",
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    raise FileNotFoundError(
+        "FInOpsApp.R not found. Tried:\n" + "\n".join(str(c) for c in candidates)
+    )
+ 
+ 
+def kill_port(port: int):
+    """Best-effort: kill any process already using the port."""
     try:
-        # Set GPU flags EARLY, before Qt initialization
-        os.environ['QTWEBENGINE_CHROMIUM_FLAGS'] = '--no-sandbox --disable-gpu --use-gl=swiftshader'
-        
-        app = QApplication(sys.argv)
-        window = FinOpsApp()
-        sys.exit(app.exec_())
-    except Exception as e:
-        print(f"[FinOps] ERROR: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+        subprocess.run(
+            ["fuser", "-k", f"{port}/tcp"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=3,
+        )
+    except Exception:
+        pass
+ 
+ 
+def port_open(port: int) -> bool:
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(0.3)
+        ok = s.connect_ex(("127.0.0.1", port)) == 0
+        s.close()
+        return ok
+    except Exception:
+        return False
+
+ 
+class LoadingWindow:
+    """Minimal tkinter splash shown while the Shiny server starts."""
+ 
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title(APP_TITLE)
+        self.root.resizable(False, False)
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._closed = False
+        self._logo_img = None  # keep reference to prevent GC
+ 
+        # ── Window icon (.ico)
+        try:
+            icon_path = Path(__file__).parent / "assets" / "icon.ico"
+            if icon_path.exists():
+                self.root.iconbitmap(str(icon_path))
+        except Exception:
+            pass
+        frame = ttk.Frame(self.root, padding=30)
+        frame.grid()
+
+        try:
+            from PIL import Image, ImageTk
+            logo_path = Path(__file__).parent / "assets" / "logo.png"
+            if logo_path.exists():
+                img = Image.open(logo_path)
+                img.thumbnail((220, 80), Image.LANCZOS)  # resize to fit splash
+                self._logo_img = ImageTk.PhotoImage(img)
+                tk.Label(frame, image=self._logo_img).grid(row=0, column=0, pady=(0, 10))
+            else:
+                raise FileNotFoundError
+        except Exception:
+            # Fallback to text if PIL not available or no logo file
+            ttk.Label(
+                frame,
+                text="☁  CloudPulse",
+                font=("Segoe UI", 18, "bold"),
+            ).grid(row=0, column=0, pady=(0, 6))
+ 
+        self.status_var = tk.StringVar(value="Starting server…")
+        ttk.Label(
+            frame,
+            textvariable=self.status_var,
+            font=("Segoe UI", 10),
+            foreground="#555",
+        ).grid(row=1, column=0, pady=(0, 14))
+ 
+        self.bar = ttk.Progressbar(frame, mode="indeterminate", length=320)
+        self.bar.grid(row=2, column=0)
+        self.bar.start(12)
+ 
+        self.elapsed_var = tk.StringVar(value="")
+        ttk.Label(
+            frame,
+            textvariable=self.elapsed_var,
+            font=("Segoe UI", 8),
+            foreground="#aaa",
+        ).grid(row=3, column=0, pady=(8, 0))
+ 
+        # Centre on screen
+        self.root.update_idletasks()
+        w, h = self.root.winfo_width(), self.root.winfo_height()
+        x = (self.root.winfo_screenwidth()  // 2) - (w // 2)
+        y = (self.root.winfo_screenheight() // 2) - (h // 2)
+        self.root.geometry(f"+{x}+{y}")
+ 
+    def set_status(self, msg: str):
+        if not self._closed:
+            self.status_var.set(msg)
+ 
+    def set_elapsed(self, seconds: float):
+        if not self._closed:
+            self.elapsed_var.set(f"{seconds:.0f}s elapsed")
+ 
+    def close(self):
+        self._closed = True
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+ 
+    def _on_close(self):
+        """User closed the splash — treat as cancel."""
+        self._closed = True
+        self.root.destroy()
+ 
+    @property
+    def closed(self):
+        return self._closed
+ 
+    def mainloop_step(self):
+        self.root.update()
+ 
+ 
+class ShinyServer:
+    def __init__(self, app_r: Path, port: int):
+        self.app_r   = app_r
+        self.port    = port
+        self.process = None
+        self._log    = []
+        self._ready  = False
+ 
+    def start(self):
+        launcher_r = self.app_r.parent / ".shiny_launcher.R"
+        launcher_r.write_text(f"""
+options(warn = -1)
+suppressPackageStartupMessages(library(shiny))
+options(shiny.port = {self.port}, shiny.host = '127.0.0.1')
+cat('[Shiny] Initializing...\\n')
+shiny::runApp('{self.app_r.as_posix()}',
+              host = '127.0.0.1',
+              port = {self.port},
+              launch.browser = FALSE)
+""")
+        env = os.environ.copy()
+        rscript = find_rscript()
+        self.process = subprocess.Popen(
+            [rscript, str(launcher_r)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            env=env,
+        )
+        threading.Thread(target=self._capture, daemon=True).start()
+ 
+    def _capture(self):
+        try:
+            for line in iter(self.process.stdout.readline, ""):
+                line = line.strip()
+                if line:
+                    self._log.append(line)
+                    print(f"[Shiny] {line}")
+                    if "Listening on" in line:
+                        self._ready = True
+        except Exception:
+            pass
+ 
+    def stop(self):
+        if self.process and self.process.poll() is None:
+            print("[CloudPulse] Stopping Shiny server…")
+            try:
+                self.process.terminate()
+                self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+        # Clean up temp launcher
+        launcher_r = self.app_r.parent / ".shiny_launcher.R"
+        try:
+            launcher_r.unlink(missing_ok=True)
+        except Exception:
+            pass
+ 
+    def alive(self) -> bool:
+        return self.process is not None and self.process.poll() is None
+
+ 
+def run():
+    try:
+        app_r = find_app_r()
+    except FileNotFoundError as e:
+        messagebox.showerror(APP_TITLE, str(e))
+        return
+ 
+    kill_port(PORT)
+    time.sleep(0.4)
+ 
+    server  = ShinyServer(app_r, PORT)
+    splash  = LoadingWindow()
+    start_t = time.time()
+ 
+    print(f"[CloudPulse] Starting Shiny server on port {PORT}…")
+    server.start()
+ 
+    url          = f"http://127.0.0.1:{PORT}"
+    opened       = False
+    gave_up      = False
+ 
+    while not splash.closed:
+        elapsed = time.time() - start_t
+ 
+        if not server.alive():
+            messagebox.showerror(
+                APP_TITLE,
+                "Shiny server crashed before it was ready.\n\n"
+                "Check that all R packages are installed:\n"
+                "  sudo Rscript install_R_packages.R",
+            )
+            break
+
+        if port_open(PORT) and not opened:
+            # Give it one extra second to finish binding
+            time.sleep(1.0)
+            splash.set_status("Opening dashboard in browser…")
+            splash.mainloop_step()
+            try:
+                subprocess.Popen([
+                    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                    f"--app={url}", "--window-size=1400,900"
+                ])
+            except FileNotFoundError:
+                try:
+                    subprocess.Popen([
+                        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+                        f"--app={url}", "--window-size=1400,900"
+                    ])
+                except FileNotFoundError:
+                    try:
+                        subprocess.Popen([
+                            r"C:\Program Files\Mozilla Firefox\firefox.exe",
+                            f"-new-window {url}"
+                        ])
+                    except FileNotFoundError:
+                        try:
+                            subprocess.Popen([
+                                r"C:\Program Files\Opera\launcher.exe",
+                                f"--new-window {url}"
+                            ])
+                        except FileNotFoundError:
+                            try:
+                                subprocess.Popen([
+                                    r"C:\Program Files\DuckDuckGo\DuckDuckGo.exe",
+                                    f"--app={url}", "--window-size=1400,900"
+                                ])
+                            except FileNotFoundError:
+                                webbrowser.open(url)  # Use preset default browser if no known browsers found
+            opened = True
+            print(f"[CloudPulse] Dashboard opened: {url}")
+            # Show a brief "ready" state, then close splash
+            time.sleep(1.5)
+            splash.close()
+            break
+
+        if elapsed > MAX_WAIT_S:
+            gave_up = True
+            messagebox.showerror(
+                APP_TITLE,
+                f"Server did not become ready after {MAX_WAIT_S}s.\n\n"
+                "Try:\n"
+                "  1. Run install_R_packages.R\n"
+                f"  2. Check port {PORT} is free: lsof -i :{PORT}\n"
+                "  3. Run FInOpsApp.R directly in R to see errors",
+            )
+            break
+
+        splash.set_status(f"Starting server… (port {PORT})")
+        splash.set_elapsed(elapsed)
+        splash.mainloop_step()
+        time.sleep(POLL_MS / 1000)
+
+    # Keep server alive until user closes the *browser* tab or this process
+    if opened and not gave_up:
+        print("[CloudPulse] Server running. Close this terminal to stop or CTRL+C.")
+        try:
+            server.process.wait()   # Block until R exits on its own
+        except KeyboardInterrupt:
+            pass
+
+    server.stop()
+    print("[CloudPulse] Done.")
+
 
 if __name__ == "__main__":
-    main()
+    run()

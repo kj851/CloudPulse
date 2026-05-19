@@ -7,6 +7,8 @@ os.environ['QTWEBENGINE_CHROMIUM_FLAGS'] = '--no-sandbox --disable-gpu'
 
 print("[Test] Importing PyQt5...")
 from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import Qt
+QApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
 
 print("[Test] Creating QApplication...")
 app = QApplication(sys.argv)

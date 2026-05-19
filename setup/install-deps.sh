@@ -53,4 +53,4 @@ run_with_timeout 1200 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
 
 echo "$(date --iso-8601=seconds) - System dependencies installed."
 echo "Installer log: $LOG"
-echo "Now run: sudo Rscript /home/keaton/dashboard-tips/install_R_packages.R"
+echo "Now run: sudo Rscript /path/to/dir/install_R_packages.R"
