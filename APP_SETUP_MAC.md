@@ -40,7 +40,7 @@ pip3 install pillow
 
 ### 5. Install R packages
 ```bash
-Rscript install_R_packages.R
+Rscript setup/install_R_packages.R
 ```
 
 This takes 10–20 minutes on first run. Packages only need to be installed once.

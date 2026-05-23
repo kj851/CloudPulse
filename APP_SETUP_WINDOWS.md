@@ -28,14 +28,14 @@ pip install pillow
 
 ### 3. Install R packages
 ```powershell
-Rscript install_R_packages.R
+Rscript setup\install_R_packages.R
 ```
 
 This takes 10–20 minutes on first run. R packages are installed system-wide and only need to be run once.
 
 If `Rscript` is not recognized, find your R installation and run it directly:
 ```powershell
-"C:\Program Files\R\R-4.4.1\bin\Rscript.exe" install_R_packages.R
+"C:\Program Files\R\R-4.4.1\bin\Rscript.exe" setup\install_R_packages.R
 ```
 
 ### 4. Run the app
