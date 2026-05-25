@@ -1,12 +1,12 @@
 #!/usr/bin/env Rscript
-# example:
+# ubuntu example:
 #   sudo Rscript setup/install_R_packages.R
-#   ./setup/install_R_packages.sh
 
 options(repos = c(CRAN = "https://cloud.r-project.org"), timeout = 600)
 
 default_lib <- .libPaths()[1]
-user_lib <- Sys.getenv("R_LIBS_USER", unset = file.path(Sys.getenv("HOME"), "R", "library"))
+user_lib <- Sys.getenv("R_LIBS_USER", unset = file.path(Sys.getenv("HOME"),
+                                                        "R", "library"))
 if (!dir.exists(user_lib)) {
   dir.create(user_lib, recursive = TRUE, showWarnings = FALSE)
 }
@@ -16,25 +16,27 @@ install_lib <- if (file.access(default_lib, 2) == 0L) {
 } else if (file.access(user_lib, 2) == 0L) {
   user_lib
 } else {
-  stop("No writable R library path is available. Please run this script with a writable R library or set R_LIBS_USER.")
+  stop("No writable R library path is available. 
+  Please run this script with a writable R library or set R_LIBS_USER.")
 }
 .libPaths(c(install_lib, .libPaths()))
 message("Installing missing packages to library: ", install_lib)
 
 pkgs <- c(
   # Core Shiny UI/UX
-  "shiny","plotly","dplyr","DT","ggridges","ggplot2","bslib","shinycssloaders",
+  "shiny", "plotly", "dplyr", "DT",
+  "ggridges", "ggplot2", "bslib", "shinycssloaders",
   # tooling
-  "remotes","rcmdcheck",
+  "remotes", "rcmdcheck",
   # language server for editor/IDE
   "languageserver",
   # forecasting
   "forecast", "prophet", "future",
   # AWS & specific paws service packages (install only required services)
   "aws.s3",
-  "AzureRMR","AzureAuth","AzureStor",
-  "googleAuthR","googleCloudStorageR","bigrquery","httr","jsonlite",
-  "DBI","RPostgres","keyring"
+  "AzureRMR", "AzureAuth", "AzureStor",
+  "googleAuthR", "googleCloudStorageR", "bigrquery", "httr", "jsonlite",
+  "DBI", "RPostgres", "keyring", "RMySQL", "RSQLite"
 )
 
 # Packages to skip because they are known
@@ -60,7 +62,8 @@ install_if_missing <- function(pkg, retries = 2) {
           return(invisible(TRUE))
         }
       }, error = function(e) {
-        message(sprintf("Attempt %d failed for %s: %s", i, pkg, conditionMessage(e)))
+        message(sprintf("Attempt %d failed for %s: %s",
+                        i, pkg, conditionMessage(e)))
       })
       Sys.sleep(2) # brief pause between retries
     }
@@ -82,7 +85,8 @@ if (file.exists(failed_log)) {
   # ensure remotes available
   if (!requireNamespace("remotes", quietly = TRUE)) {
     message("Installing 'remotes' to enable GitHub installs...")
-    tryCatch(install.packages("remotes", dependencies = TRUE), error = function(e) message("remotes install failed: ", conditionMessage(e)))
+    tryCatch(install.packages("remotes", dependencies = TRUE),
+             error = function(e) message("remotes install failed: ", conditionMessage(e)))
   }
   # prefer explicit per-package GitHub repos for the known failing packages
   gh_targets <- c(
@@ -104,7 +108,8 @@ if (file.exists(failed_log)) {
           available after install: ", pkg)
         }
       }, error = function(e) {
-        message("Failed to install ", pkg, " from GitHub: ", conditionMessage(e))
+        message("Failed to install ",
+                pkg, " from GitHub: ", conditionMessage(e))
       })
     } else {
       message(pkg, " is already available after initial install attempt")

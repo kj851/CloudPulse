@@ -1,0 +1,72 @@
+# ── PyInstaller ───────────────────────────────────────────────────────────────
+build/
+dist/
+*.spec.bak
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+*.egg
+
+# ── Python virtual environments ───────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+.env
+
+# ── R ─────────────────────────────────────────────────────────────────────────
+.Rhistory
+.RData
+.Rproj.user/
+*.Rproj
+.Ruserdata
+rsconnect/
+
+# ── Shiny / app runtime files ─────────────────────────────────────────────────
+.shiny_launcher.R
+finops_app.pid
+*.pid
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+cloudpulse.log
+
+# ── OS files ──────────────────────────────────────────────────────────────────
+# Windows
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+
+# ── Editor / IDE ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# ── Secrets / credentials ─────────────────────────────────────────────────────
+.env
+*.pem
+*.key
+secrets.json
+credentials.json
+service_account.json
+
+# ── Temp / cache ──────────────────────────────────────────────────────────────
+*.tmp
+*.temp
+.cache/
+tmp/

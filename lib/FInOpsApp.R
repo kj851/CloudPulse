@@ -16,6 +16,10 @@ library(bslib)
 library(promises)
 library(forecast)
 library(DBI)
+library(shinycssloaders)
+library(RMySQL)
+library(RSQLite)
+
 # for async
 if (requireNamespace("future", quietly = TRUE)) {
   future::plan(future::multisession)
@@ -27,7 +31,7 @@ if (requireNamespace("future", quietly = TRUE)) {
 # Helper function for %notin%
 `%notin%` <- function(x, y) !(x %in% y)
 
-# withSpinner wrapper (graceful fallback)
+# withSpinner wrapper
 if (!requireNamespace("shinycssloaders", quietly = TRUE)) {
   withSpinner <- function(expr, ...) expr
 }
@@ -233,7 +237,6 @@ dashboard_ui <- function() {
         )
       ),
       hr(),
-      # Query Configuration
       div(
         class = "mb-4",
         h6(
@@ -273,7 +276,6 @@ dashboard_ui <- function() {
           )
         )
       ),
-      # Instance Selection
       conditionalPanel(
         condition = "input.query_type == 'Usage'",
         div(
@@ -342,7 +344,7 @@ dashboard_ui <- function() {
         class = "d-grid gap-2 mt-4",
         actionButton(
           "query",
-          "🔍 Query Data",
+          "Query Data",
           class = "btn btn-primary fw-bold",
           style = "padding: 0.75rem; border-radius: 8px;"
         )

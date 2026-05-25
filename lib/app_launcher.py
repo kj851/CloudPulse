@@ -18,18 +18,12 @@ import webbrowser
 import tkinter as tk
 from tkinter import ttk, messagebox
 from pathlib import Path
-import tempfile
-
-log_path = Path(tempfile.gettempdir()) / "CloudPulse" / "cloudpulse.log"
-log_path.parent.mkdir(exist_ok=True)
-sys.stdout = open(log_path, 'w', buffering=1)
-sys.stderr = sys.stdout
-print(f"[CloudPulse] Log started: {log_path}")
 
 PORT        = 3456
 MAX_WAIT_S  = 90          # seconds before giving up
 POLL_MS     = 300         # ms between port-ready checks
 APP_TITLE   = "CloudPulse Dashboard"
+
 
 def find_rscript() -> str:
     """Find Rscript executable, checking common Windows install paths."""
@@ -46,7 +40,7 @@ def find_rscript() -> str:
         os.path.expanduser(r"~\AppData\Local\Programs\R\R-*\bin\Rscript.exe"),
     ]
     for pattern in patterns:
-        matches = sorted(glob.glob(pattern), reverse=True)
+        matches = sorted(glob.glob(pattern), reverse=True)  # newest version first
         if matches:
             return matches[0]
     raise FileNotFoundError(
@@ -125,7 +119,6 @@ class LoadingWindow:
         except Exception:
             pass
 
-        # ── Layout
         frame = ttk.Frame(self.root, padding=30)
         frame.grid()
 
@@ -167,7 +160,6 @@ class LoadingWindow:
             foreground="#aaa",
         ).grid(row=3, column=0, pady=(8, 0))
 
-        # Center the window on the screen
         self.root.update_idletasks()
         w, h = self.root.winfo_width(), self.root.winfo_height()
         x = (self.root.winfo_screenwidth()  // 2) - (w // 2)
@@ -218,6 +210,7 @@ class ShinyServer:
         launcher_r = tmp_dir / ".shiny_launcher.R"
         # Use forward slashes — R on Windows accepts them and avoids escape issues
         app_path_r = self.app_r.as_posix().replace("'", "\\'")
+        app_dir_r  = self.app_r.parent.as_posix().replace("'", "\\'")
         launcher_r.write_text(f"""
             options(warn = -1)
             suppressPackageStartupMessages(library(shiny))
@@ -225,6 +218,9 @@ class ShinyServer:
             cat('[Shiny] Initializing...\\n')
             cat('[Shiny] App path: {app_path_r}\\n')
             if (!file.exists('{app_path_r}')) stop('App file not found: {app_path_r}')
+            # Set working directory so relative paths (aws.r, azure.r etc.) resolve correctly
+            setwd('{app_dir_r}')
+            cat('[Shiny] Working dir: ', getwd(), '\\n')
             shiny::runApp('{app_path_r}',
                         host = '127.0.0.1',
                         port = {self.port},
@@ -277,6 +273,8 @@ class ShinyServer:
         return self.process is not None and self.process.poll() is None
 
 
+# ── Main controller ────────────────────────────────────────────────────────────
+
 def run():
     try:
         app_r = find_app_r()
@@ -302,7 +300,7 @@ def run():
         elapsed = time.time() - start_t
 
         if not server.alive():
-            time.sleep(2.0)  # give output thread time to flush
+            time.sleep(1.0)  # give output thread a moment to flush
             log_tail = server.last_log()
             messagebox.showerror(
                 APP_TITLE,
@@ -318,7 +316,7 @@ def run():
 
         if port_open(PORT) and not opened:
             # Give it one extra second to finish binding
-            time.sleep(2.0)
+            time.sleep(1.0)
             splash.set_status("Opening dashboard in browser…")
             splash.mainloop_step()
             try:
