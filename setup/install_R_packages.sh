@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Install R packages wrapper for Ubuntu/Linux
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -8,7 +10,6 @@ if [ -z "$RSC" ]; then
   exit 1
 fi
 
-# Run installer with sudo if not root (so packages install to system library)
 if [ "$(id -u)" -ne 0 ]; then
   echo "Running R installer as root (sudo) so packages install to system library..."
   sudo "$RSC" "$SCRIPT_DIR/install_R_packages.R"

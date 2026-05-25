@@ -35,8 +35,8 @@ jobs:
 
       - name: Install R packages
         run: |
-          chmod +x install_R_packages.sh
-          sudo Rscript install_R_packages.R
+          chmod +x setup/install_R_packages.sh
+          sudo Rscript setup/install_R_packages.R
 
       - name: Check Shiny app loads without errors
         run: |

@@ -1,0 +1,117 @@
+name: CloudPulse CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  lint-r:
+    name: Lint R code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.6'
+          use-public-rspm: true
+
+      - name: Install lintr
+        run: |
+          Rscript -e "install.packages('lintr', repos='https://cloud.r-project.org')"
+
+      - name: Lint all R files
+        run: |
+          Rscript -e "
+            library(lintr)
+            files <- c(
+              'lib/FInOpsApp.R',
+              'lib/aws.r', 'lib/azure.r',
+              'lib/GCP.r', 'lib/mock.r', 'lib/forecast.r'
+            )
+            results <- lint_files(files)
+            if (length(results) > 0) {
+              print(results)
+              # Warn but don't fail on style issues — only fail on errors
+              errors <- Filter(function(x) x\$type == 'error', results)
+              if (length(errors) > 0) quit(status = 1)
+            } else {
+              cat('No lint issues found\n')
+            }
+          "
+
+  check-r:
+    name: Check R ${{ matrix.r-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        r-version: ['4.4', '4.5', '4.6']
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: ${{ matrix.r-version }}
+          use-public-rspm: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libssl-dev libcurl4-openssl-dev libxml2-dev libpq-dev \
+            libcairo2-dev libxt-dev libharfbuzz-dev libfribidi-dev \
+            libgdal-dev libproj-dev libudunits2-dev libsodium-dev \
+            libfontconfig1-dev libfreetype6-dev
+
+      - name: Cache R packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.R_LIBS_USER }}
+          key: r-${{ matrix.r-version }}-${{ hashFiles('install_R_packages.R') }}
+          restore-keys: r-${{ matrix.r-version }}-
+
+      - name: Install R packages
+        run: Rscript install_R_packages.R
+
+      - name: Syntax check all R files
+        run: |
+          Rscript -e "
+            files <- c(
+              'lib/FInOpsApp.R',
+              'lib/aws.r', 'lib/azure.r',
+              'lib/GCP.r', 'lib/mock.r', 'lib/forecast.r'
+            )
+            ok <- TRUE
+            for (f in files) {
+              tryCatch({
+                parse(f)
+                cat('PASS:', f, '\n')
+              }, error = function(e) {
+                cat('FAIL:', f, '-', e\$message, '\n')
+                ok <<- FALSE
+              })
+            }
+            if (!ok) quit(status = 1)
+          "
+
+      - name: Check Shiny modules load
+        run: |
+          Rscript -e "
+            setwd('lib')
+            source('aws.r')
+            source('azure.r')
+            source('GCP.r')
+            source('mock.r')
+            source('forecast.r')
+            cat('All modules loaded successfully\n')
+          "
