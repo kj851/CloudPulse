@@ -9,6 +9,7 @@ __pycache__/
 .Python
 *.egg-info/
 *.egg
+lib/__pycache__/
 
 # ── Python virtual environments ───────────────────────────────────────────────
 .venv/
@@ -29,6 +30,7 @@ rsconnect/
 .shiny_launcher.R
 finops_app.pid
 *.pid
+build/CloudPulse/localpycs/
 
 # ── Logs ──────────────────────────────────────────────────────────────────────
 *.log

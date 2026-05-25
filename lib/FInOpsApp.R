@@ -17,8 +17,13 @@ library(promises)
 library(forecast)
 library(DBI)
 library(shinycssloaders)
-library(RMySQL)
-library(RSQLite)
+
+# Source cloud scripts mock and real implementations
+source("data/aws.r")
+source("data/azure.r")
+source("data/GCP.r")
+source("data/mock.r")
+source("data/forecast.r")
 
 # for async
 if (requireNamespace("future", quietly = TRUE)) {
@@ -28,22 +33,16 @@ if (requireNamespace("future", quietly = TRUE)) {
   async futures disabled. Install 'future' to enable.")
 }
 
-# Helper function for %notin%
 `%notin%` <- function(x, y) !(x %in% y)
 
 # withSpinner wrapper
-if (!requireNamespace("shinycssloaders", quietly = TRUE)) {
-  withSpinner <- function(expr, ...) expr
+if (requireNamespace("shinycssloaders", quietly = TRUE)) {
+  shinycssloaders::withSpinner(expr, ...)
+} else {
+  message("'shinycssloaders' not  package available.")
 }
 
-# Source cloud scripts mock and real implementations
-source("data/aws.r")
-source("data/azure.r")
-source("data/GCP.r")
-source("data/mock.r")
-source("data/forecast.r")
-
-# Theme config
+# Theme
 modern_theme <- bs_theme(
   preset = "bootstrap",
   primary = "#0D6EFD",
@@ -60,7 +59,7 @@ modern_theme <- bs_theme(
   )
 )
 
-# UI - Credential Entry Page
+# Credential Entry Page
 credentials_ui <- function() {
   div(
     class = "d-flex align-items-center justify-content-center vh-100",
@@ -190,7 +189,7 @@ credentials_ui <- function() {
             )
           )
         ),
-        # Mock Data Option
+        # Mock Data
         conditionalPanel(
           condition = "input.cred_provider == 'Use Mock Data'",
           div(
@@ -808,5 +807,6 @@ server <- function(input, output, session) {
     }
   })
 }
+
 # Return the Shiny app object
 shinyApp(ui, server)
