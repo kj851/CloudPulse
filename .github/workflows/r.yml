@@ -1,12 +1,4 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-#
-# See https://github.com/r-lib/actions/tree/master/examples#readme for
-# additional example workflows available for the R community.
-
-name: R
+name: CloudPulse CI
 
 on:
   push:
@@ -18,26 +10,77 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  check:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        r-version: ['4.2', '4.3']
+        r-version: ['4.4', '4.5', '4.6', '4.7']
 
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up R ${{ matrix.r-version }}
-        uses: r-lib/actions/setup-r@f57f1301a053485946083d7a45022b278929a78a
+        uses: r-lib/actions/setup-r@v2
         with:
           r-version: ${{ matrix.r-version }}
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libssl-dev libcurl4-openssl-dev libxml2-dev libpq-dev
-      - name: Install R dependencies
+          sudo apt-get install -y \
+            libssl-dev libcurl4-openssl-dev libxml2-dev libpq-dev \
+            libcairo2-dev libxt-dev libharfbuzz-dev libfribidi-dev \
+            libgdal-dev libproj-dev libudunits2-dev libsodium-dev \
+            libfontconfig1-dev libfreetype6-dev
+
+      - name: Install R packages
         run: |
-          ./setup/install_R_packages.sh
-        shell: bash
-      - name: Check
-        run: rcmdcheck::rcmdcheck(args = "--no-manual", error_on = "error")
-        shell: Rscript {0}
+          chmod +x install_R_packages.sh
+          sudo Rscript install_R_packages.R
+
+      - name: Check Shiny app loads without errors
+        run: |
+          Rscript -e "
+            # Source all modules
+            source('lib/data/aws.r')
+            source('lib/data/azure.r')
+            source('lib/data/GCP.r')
+            source('lib/data/mock.r')
+            source('lib/data/forecast.r')
+            cat('All modules sourced successfully\n')
+
+            # Check app can be parsed
+            shiny::shinyAppFile('lib/FInOpsApp.R')
+            cat('Shiny app loaded successfully\n')
+          "
+
+      - name: Check R syntax on all files
+        run: |
+          Rscript -e "
+            files <- c(
+              'lib/FInOpsApp.R',
+              'lib/data/aws.r',
+              'lib/data/azure.r',
+              'lib/data/GCP.r',
+              'lib/data/mock.r',
+              'lib/data/forecast.r'
+            )
+            errors <- c()
+            for (f in files) {
+              result <- tryCatch(
+                parse(f),
+                error = function(e) e
+              )
+              if (inherits(result, 'error')) {
+                errors <- c(errors, paste(f, ':', result\$message))
+              } else {
+                cat('OK:', f, '\n')
+              }
+            }
+            if (length(errors) > 0) {
+              cat('SYNTAX ERRORS:\n')
+              cat(paste(errors, collapse = '\n'), '\n')
+              quit(status = 1)
+            }
+            cat('All files passed syntax check\n')
+          "

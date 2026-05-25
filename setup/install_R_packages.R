@@ -1,6 +1,10 @@
 #!/usr/bin/env Rscript
 # ubuntu example:
 #   sudo Rscript setup/install_R_packages.R
+# windows example:
+#   Rscript setup/install_R_packages.R
+# mac example:
+#   Rscript setup/install_R_packages.R
 
 options(repos = c(CRAN = "https://cloud.r-project.org"), timeout = 600)
 
