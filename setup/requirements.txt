@@ -1,2 +1,5 @@
-PyQt5>=5.15.0
-PyQtWebEngine>=5.15.0
+# CloudPulse Python dependencies
+# Install with: pip install -r requirements.txt
+
+pyinstaller>=6.0.0
+Pillow>=10.0.0

@@ -11,6 +11,7 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  R_LIBS_USER: ${{ github.workspace }}/.r-lib
 
 jobs:
   lint-r:
@@ -24,23 +25,52 @@ jobs:
           r-version: '4.6'
           use-public-rspm: true
 
-      - name: Install lintr
+      - name: Install system dependencies
         run: |
-          Rscript -e "install.packages('lintr', repos='https://cloud.r-project.org')"
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            libssl-dev libcurl4-openssl-dev libxml2-dev libpq-dev \
+            libcairo2-dev libxt-dev libharfbuzz-dev libfribidi-dev \
+            libfontconfig1-dev libfreetype6-dev
+
+      - name: Create R library dir
+        run: mkdir -p ${{ github.workspace }}/.r-lib
+
+      - name: Cache R packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.r-lib
+          key: r-lint-4.6-${{ hashFiles('install_R_packages.R') }}
+          restore-keys: r-lint-4.6-
+
+      - name: Install shiny + lintr
+        run: |
+          Rscript -e "
+            lib <- Sys.getenv('R_LIBS_USER')
+            dir.create(lib, recursive = TRUE, showWarnings = FALSE)
+            .libPaths(c(lib, .libPaths()))
+            pkgs <- c('shiny', 'lintr')
+            to_install <- pkgs[!pkgs %in% installed.packages()[,'Package']]
+            if (length(to_install) > 0) {
+              install.packages(to_install,
+                lib = lib,
+                repos = 'https://packagemanager.posit.co/cran/__linux__/noble/latest')
+            }
+          "
 
       - name: Lint all R files
         run: |
           Rscript -e "
+            .libPaths(c(Sys.getenv('R_LIBS_USER'), .libPaths()))
             library(lintr)
             files <- c(
               'lib/FInOpsApp.R',
-              'lib/aws.r', 'lib/azure.r',
-              'lib/GCP.r', 'lib/mock.r', 'lib/forecast.r'
+              'lib/data/daws.r', 'lib/data/azure.r',
+              'lib/data/GCP.r', 'lib/data/mock.r', 'lib/data/forecast.r'
             )
             results <- lint_files(files)
             if (length(results) > 0) {
               print(results)
-              # Warn but don't fail on style issues — only fail on errors
               errors <- Filter(function(x) x\$type == 'error', results)
               if (length(errors) > 0) quit(status = 1)
             } else {
@@ -56,6 +86,9 @@ jobs:
       matrix:
         r-version: ['4.4', '4.5', '4.6']
 
+    env:
+      R_LIBS_USER: ${{ github.workspace }}/.r-lib
+
     steps:
       - uses: actions/checkout@v5
 
@@ -66,30 +99,58 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          sudo apt-get update
+          sudo apt-get update -qq
           sudo apt-get install -y \
             libssl-dev libcurl4-openssl-dev libxml2-dev libpq-dev \
             libcairo2-dev libxt-dev libharfbuzz-dev libfribidi-dev \
             libgdal-dev libproj-dev libudunits2-dev libsodium-dev \
             libfontconfig1-dev libfreetype6-dev
 
+      - name: Create R library dir
+        run: mkdir -p ${{ github.workspace }}/.r-lib
+
       - name: Cache R packages
+        id: cache-r
         uses: actions/cache@v4
         with:
-          path: ${{ env.R_LIBS_USER }}
+          path: ${{ github.workspace }}/.r-lib
           key: r-${{ matrix.r-version }}-${{ hashFiles('install_R_packages.R') }}
           restore-keys: r-${{ matrix.r-version }}-
 
       - name: Install R packages
-        run: Rscript install_R_packages.R
+        run: |
+          Rscript -e "
+            lib <- Sys.getenv('R_LIBS_USER')
+            dir.create(lib, recursive = TRUE, showWarnings = FALSE)
+            .libPaths(c(lib, .libPaths()))
+            cat('Library path:', lib, '\n')
+            cat('libPaths:', paste(.libPaths(), collapse=', '), '\n')
+          "
+          Rscript install_R_packages.R
+
+      - name: Verify key packages installed
+        run: |
+          Rscript -e "
+            .libPaths(c(Sys.getenv('R_LIBS_USER'), .libPaths()))
+            required <- c('shiny','bslib','plotly','DT','dplyr','ggplot2','forecast','shinycssloaders')
+            missing  <- required[!required %in% installed.packages()[,'Package']]
+            if (length(missing) > 0) {
+              cat('MISSING packages:', paste(missing, collapse=', '), '\n')
+              install.packages(missing,
+                repos='https://packagemanager.posit.co/cran/__linux__/noble/latest')
+            } else {
+              cat('All required packages present\n')
+            }
+          "
 
       - name: Syntax check all R files
         run: |
           Rscript -e "
+            .libPaths(c(Sys.getenv('R_LIBS_USER'), .libPaths()))
             files <- c(
               'lib/FInOpsApp.R',
-              'lib/aws.r', 'lib/azure.r',
-              'lib/GCP.r', 'lib/mock.r', 'lib/forecast.r'
+              'lib/data/aws.r', 'lib/data/azure.r',
+              'lib/data/GCP.r', 'lib/data/mock.r', 'lib/data/forecast.r'
             )
             ok <- TRUE
             for (f in files) {
@@ -107,7 +168,8 @@ jobs:
       - name: Check Shiny modules load
         run: |
           Rscript -e "
-            setwd('lib')
+            .libPaths(c(Sys.getenv('R_LIBS_USER'), .libPaths()))
+            setwd('lib/data')
             source('aws.r')
             source('azure.r')
             source('GCP.r')

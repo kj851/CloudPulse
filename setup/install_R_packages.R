@@ -40,10 +40,9 @@ pkgs <- c(
   "aws.s3",
   "AzureRMR", "AzureAuth", "AzureStor",
   "googleAuthR", "googleCloudStorageR", "bigrquery", "httr", "jsonlite",
-  "DBI", "RPostgres", "keyring", "RMySQL", "RSQLite"
+  "DBI", "RPostgres", "keyring", "RMySQL", "RSQLite", "jsonlite"
 )
 
-# Packages to skip because they are known
 skip_pkgs <- c("paws", "paws.analytics")
 
 failed_log <- "/tmp/install_R_failed.txt"

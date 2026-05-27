@@ -14,10 +14,9 @@ FinOps is a desktop wrapper and dashboard for analyzing and optimizing cloud cos
 
 ## Prerequisites
 
-- Python 3.8+ with `PyQt5` and `PyQtWebEngine` (see `requirements.txt`)
-- R (4.x recommended) with packages listed in `install_R_packages.R`
+- R (4.4-4.6 recommended) with requried packages listed in `install_R_packages.R`
 
-## Installation & Run (local)
+## Installation & Run (LINUX ONLY)
 
 1. Clone the repository:
 
@@ -32,16 +31,17 @@ cd CloudPulse
 python3 -m pip install -r requirements.txt
 ```
 
-3. Install R package dependencies using the setup helper:
+3. Install R package dependencies and linux deps using the setup helper:
 
 ```bash
 ./setup/install_R_packages.sh
+./setup/install-deps.sh
 ```
 
 4. Launch the app (desktop wrapper):
 
 ```bash
-./run_app.sh
+./launch_app.sh
 ```
 
 Alternatively, you can run the Shiny app directly from R:
