@@ -126,7 +126,7 @@ jobs:
             cat('Library path:', lib, '\n')
             cat('libPaths:', paste(.libPaths(), collapse=', '), '\n')
           "
-          Rscript install_R_packages.R
+          Rscript setup/install_R_packages.R
 
       - name: Verify key packages installed
         run: |
