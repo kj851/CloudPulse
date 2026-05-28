@@ -18,7 +18,8 @@ FinOps is a desktop wrapper and dashboard for analyzing and optimizing cloud cos
 - R (4.4-4.6 recommended) with requried packages listed in `install_R_packages.R`
 - Lastest Python version with Pyinstaller and Pillow modules
 
-## Installation & Run (See APP_SETUP_<YOUR OS> for OS specific installation and run)
+## Installation & Run Overveiew
+(See APP_SETUP_<YOUR OS> for OS specific configuration)
 
 1. Clone the repository:
 
@@ -56,7 +57,10 @@ shiny::runApp('.')
 
 1. Use the desktop launcher to open the app window (MacOS and Windows).
 2. Select cloud provider, query type, and date ranges in the sidebar.
-3. Enable forecasting or mock data for local testing.
+3. Enable forecasting and mock data for local testing.
+4. Use the tips section to apply optimizations.
+5. Set up alerts for budget thresholds.
+
 
 ## Contributing
 
@@ -67,7 +71,6 @@ Please follow these steps:
 1. Fork the repository.
 2. Create a feature branch.
 3. Make your changes and commit.
-4. Push to your fork and submit a pull request.
 
 ## License
 
