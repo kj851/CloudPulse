@@ -2,7 +2,7 @@
 # we can use these mock functions to simulate data retrieval.
 # This allows us to build and test the Shiny app's UI and
 # logic without needing actual cloud useage.
-# Author: Keaton Szantho
+# Copyright (c) 2026, Keaton Szantho
 
 `%||%` <- function(a, b) if (!is.null(a)) a else b
 
@@ -10,7 +10,7 @@
 # directly in data frames — could inject arbitrary strings into the UI.
 .valid_provider <- function(provider) {
   provider <- trimws(provider %||% "")
-  if (provider %notin% c("AWS","Azure","GCP")) {
+  if (provider %notin% c("AWS", "Azure", "GCP")) {
     warning("Unknown provider '", provider, "'; defaulting to AWS.")
     return("AWS")
   }
@@ -32,37 +32,40 @@ get_mock_metadata <- function(provider) {
   provider <- .valid_provider(provider)
   switch(provider,
     AWS = data.frame(
-      identifier    = c("aws-db-1","aws-db-2"),
-      class         = c("db.t3.medium","db.t3.large"),
-      engine        = c("postgres","postgres"),
-      status        = c("available","stopped"),
+      identifier    = c("aws-db-1", "aws-db-2"),
+      class         = c("db.t3.medium", "db.t3.large"),
+      engine        = c("postgres", "postgres"),
+      status        = c("available", "stopped"),
       storage_gb    = c(20L, 50L),
       multi_az      = c(FALSE, TRUE),
       creation_time = Sys.time() - c(100000, 200000),
-      endpoint      = c("aws-db-1.example","aws-db-2.example"),
+      endpoint      = c("aws-db-1.example", "aws-db-2.example"),
       port          = c(5432L, 5432L),
       stringsAsFactors = FALSE
     ),
     Azure = data.frame(
-      name                        = c("azure-db-1","azure-db-2"),
-      location                    = c("eastus","westeurope"),
-      sku_name                    = c("GP_Gen5_2","GP_Gen5_4"),
-      sku_tier                    = c("GeneralPurpose","GeneralPurpose"),
+      name                        = c("azure-db-1", "azure-db-2"),
+      location                    = c("eastus", "westeurope"),
+      sku_name                    = c("GP_Gen5_2", "GP_Gen5_4"),
+      sku_tier                    = c("GeneralPurpose", "GeneralPurpose"),
       storage_mb                  = c(51200L, 102400L),
-      version                     = c("12","13"),
-      state                       = c("Ready","Stopped"),
+      version                     = c("12", "13"),
+      state                       = c("Ready", "Stopped"),
       fully_qualified_domain_name = c("azure-db-1.database.windows.net",
                                       "azure-db-2.database.windows.net"),
       stringsAsFactors = FALSE
     ),
     GCP = data.frame(
-      name              = c("gcp-db-1","gcp-db-2"),
-      database_version  = c("POSTGRES_13","POSTGRES_14"),
-      region            = c("us-central1","europe-west1"),
-      tier              = c("db-custom-1-3840","db-custom-2-7680"),
+      name              = c("gcp-db-1", "gcp-db-2"),
+      database_version  = c("POSTGRES_13", "POSTGRES_14"),
+      region            = c("us-central1", "europe-west1"),
+      tier              = c("db-custom-1-3840", "db-custom-2-7680"),
       data_disk_size_gb = c(20L, 50L),
-      state             = c("RUNNABLE","SUSPENDED"),
-      connection_name   = c("project:region:gcp-db-1", "project:region:gcp-db-2"),
+      state             = c("RUNNABLE", "SUSPENDED"),
+      connection_name   = c(
+        "project:region:gcp-db-1",
+        "project:region:gcp-db-2"
+      ),
       stringsAsFactors = FALSE
     )
   )
@@ -73,13 +76,13 @@ get_mock_usage <- function(provider, instance_id) {
   instance_id <- trimws(instance_id %||% "")
   # Validate instance_id against known mock values
   valid_ids <- c(
-    "aws-db-1"
-    "aws-db-2"
-    "azure-db-1"
+    "aws-db-1",
+    "aws-db-2",
+    "azure-db-1",
     "azure-db-2",
     "gcp-db-1",
-    "gcp-db-2",
-    "")
+    "gcp-db-2"
+  )
   if (instance_id %notin% valid_ids) {
     warning("Unknown instance_id '", instance_id, "'; using mock data.")
   }
@@ -105,7 +108,7 @@ get_mock_cost <- function(start_date, end_date) {
   if (sd >= ed)                  stop("start_date must be before end_date.")
   if (as.numeric(ed - sd) > 366) stop("Date range must not exceed 366 days.")
 
-  instances <- c("instance-A","instance-B","instance-C")
+  instances <- c("instance-A", "instance-B", "instance-C")
   data.frame(
     start       = format(sd),
     end         = format(ed),

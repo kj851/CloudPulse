@@ -1,5 +1,6 @@
 # CloudPulse Python dependencies
 # Install with: pip install -r requirements.txt
+# Copyright (c) 2026, Keaton Szantho
 
 pyinstaller>=6.0.0
 Pillow>=10.0.0

@@ -5,12 +5,13 @@
 #   Rscript setup/install_R_packages.R
 # mac example:
 #   Rscript setup/install_R_packages.R
+# Copyright (c) 2026, Keaton Szantho
 
 options(repos = c(CRAN = "https://cloud.r-project.org"), timeout = 600)
 
 default_lib <- .libPaths()[1]
-user_lib <- Sys.getenv("R_LIBS_USER", unset = file.path(Sys.getenv("HOME"),
-                                                        "R", "library"))
+user_lib <- Sys.getenv("R_
+LIBS_USER", unset = file.path(Sys.getenv("HOME"), "R", "library"))
 if (!dir.exists(user_lib)) {
   dir.create(user_lib, recursive = TRUE, showWarnings = FALSE)
 }
@@ -29,18 +30,12 @@ message("Installing missing packages to library: ", install_lib)
 pkgs <- c(
   # Core Shiny UI/UX
   "shiny", "plotly", "dplyr", "DT",
-  "ggridges", "ggplot2", "bslib", "shinycssloaders",
-  # tooling
-  "remotes", "rcmdcheck",
+  "ggridges", "ggplot2", "bslib", "shinycssloaders", "remotes", "rcmdcheck",
   # language server for editor/IDE
-  "languageserver",
-  # forecasting
-  "forecast", "prophet", "future",
-  # AWS & specific paws service packages (install only required services)
-  "aws.s3",
-  "AzureRMR", "AzureAuth", "AzureStor",
+  "languageserver", "forecast",
+  "prophet", "future", "aws.s3", "AzureRMR", "AzureAuth", "AzureStor",
   "googleAuthR", "googleCloudStorageR", "bigrquery", "httr", "jsonlite",
-  "DBI", "RPostgres", "keyring", "RMySQL", "RSQLite", "jsonlite"
+  "DBI", "RPostgres", "keyring"
 )
 
 skip_pkgs <- c("paws", "paws.analytics")
@@ -73,10 +68,10 @@ install_if_missing <- function(pkg, retries = 2) {
     msg <- sprintf("%s\tFAILED\n", pkg)
     cat(msg, file = failed_log, append = TRUE)
     message("Failed to install ", pkg, ". See ", failed_log)
-    return(invisible(FALSE))
+    invisible(FALSE)
   } else {
     message(pkg, " already installed")
-    return(invisible(TRUE))
+    invisible(TRUE)
   }
 }
 
@@ -89,7 +84,9 @@ if (file.exists(failed_log)) {
   if (!requireNamespace("remotes", quietly = TRUE)) {
     message("Installing 'remotes' to enable GitHub installs...")
     tryCatch(install.packages("remotes", dependencies = TRUE),
-             error = function(e) message("remotes install failed: ", conditionMessage(e)))
+      error =
+        function(e) message("remotes install failed: ", conditionMessage(e))
+    )
   }
   # prefer explicit per-package GitHub repos for the known failing packages
   gh_targets <- c(
@@ -102,7 +99,7 @@ if (file.exists(failed_log)) {
     if (!requireNamespace(pkg, quietly = TRUE)) {
       message("Attempting GitHub install for ", pkg, " from ", repo)
       tryCatch({
-        remotes::install_github(repo, dependencies = TRUE, upgrade = 
+        remotes::install_github(repo, dependencies = TRUE, upgrade =
                                   "never", INSTALL_opts = c("--no-multiarch"))
         if (requireNamespace(pkg, quietly = TRUE)) {
           message("Installed ", pkg, " from GitHub (", repo, ")")
@@ -123,7 +120,7 @@ if (file.exists(failed_log)) {
     message("Attempting a GitHub install of 
     the paws meta-package (may pull many subpackages).")
     tryCatch({
-      remotes::install_github("paws-r/paws", dependencies = TRUE, upgrade = 
+      remotes::install_github("paws-r/paws", dependencies = TRUE, upgrade =
                                 "never", INSTALL_opts = c("--no-multiarch"))
     }, error = function(e) {
       message("paws meta-package GitHub install failed: ", conditionMessage(e))

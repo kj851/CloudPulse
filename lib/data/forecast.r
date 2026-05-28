@@ -1,8 +1,17 @@
 # Forecasting functions for CloudPulse FinOps Dashboard
 # This module provides functions to prepare time series data, find anomalies,
 # and generate forecasts using Prophet, ARIMA, and Exponential Smoothing.
+# Copyright (c) 2026, Keaton Szantho
 
 library(dplyr)
+
+yhat <- NULL
+yhat_lower <- NULL
+yhat_upper <- NULL
+trend <- NULL
+ds <- NULL
+y <- NULL
+is_anomaly <- NULL
 
 # Validate periods argument everywhere
 .validate_periods <- function(periods, min_val = 1L, max_val = 365L) {
@@ -17,7 +26,9 @@ library(dplyr)
 # with caller-supplied strings — could reference arbitrary R objects in scope.
 .validate_col <- function(df, col_name, context = "column") {
   col_name <- trimws(col_name %||% "")
-  if (!nzchar(col_name) || !grepl("^[a-zA-Z][a-zA-Z0-9_\\.]{0,63}$", col_name, perl = TRUE))
+  if (!nzchar(col_name) || !grepl("^[a-zA-Z][a-zA-Z0-9_
+  \\.]{0,63}$", col_name, perl = TRUE)
+  )
     stop(sprintf("Invalid %s name: '%s'.", context, col_name))
   if (!col_name %in% colnames(df))
     stop(sprintf("Column '%s' not found in data frame.", col_name))
@@ -26,10 +37,17 @@ library(dplyr)
 
 `%||%` <- function(a, b) if (!is.null(a)) a else b
 
-prepare_time_series <- function(df, timestamp_col = "timestamp", value_col = "cpu_avg",
-                                frequency = "day", min_observations = 14L) {
+prepare_time_series <- function(
+  df,
+  timestamp_col = "timestamp",
+  value_col = "cpu_avg",
+  frequency = "day",
+  min_observations = 14L
+) {
   if (is.null(df) || !is.data.frame(df) || nrow(df) < min_observations)
-    return(list(success = FALSE, data = data.frame(), error = "Insufficient data"))
+    return(list(
+      success = FALSE, data = data.frame(), error = "Insufficient data"
+    ))
 
   timestamp_col <- .validate_col(df, timestamp_col, "timestamp")
   value_col     <- .validate_col(df, value_col,     "value")
@@ -40,9 +58,9 @@ prepare_time_series <- function(df, timestamp_col = "timestamp", value_col = "cp
       dplyr::group_by(date) |>
       dplyr::summarise(
         y     = mean(.data[[value_col]], na.rm = TRUE),
-        min   = min( .data[[value_col]], na.rm = TRUE),
-        max   = max( .data[[value_col]], na.rm = TRUE),
-        sd    = sd(  .data[[value_col]], na.rm = TRUE),
+        min   = min(.data[[value_col]], na.rm = TRUE),
+        max   = max(.data[[value_col]], na.rm = TRUE),
+        sd    = sd(.data[[value_col]], na.rm = TRUE),
         count = n(),
         .groups = "drop"
       ) |>
@@ -68,11 +86,11 @@ find_anomalies <- function(ts_data, threshold = 1.5) {
   threshold <- max(0.5, min(5.0, as.numeric(threshold %||% 1.5)))
   if (!is.data.frame(ts_data) || nrow(ts_data) < 5L) return(data.frame())
 
-  Q1    <- quantile(ts_data$y, 0.25, na.rm = TRUE)
-  Q3    <- quantile(ts_data$y, 0.75, na.rm = TRUE)
-  IQR   <- Q3 - Q1
-  lower <- Q1 - threshold * IQR
-  upper <- Q3 + threshold * IQR
+  q1    <- quantile(ts_data$y, 0.25, na.rm = TRUE)
+  q3    <- quantile(ts_data$y, 0.75, na.rm = TRUE)
+  iqr   <- q3 - q1
+  lower <- q1 - threshold * iqr
+  upper <- q3 + threshold * iqr
 
   ts_data |>
     dplyr::mutate(
@@ -86,7 +104,11 @@ find_anomalies <- function(ts_data, threshold = 1.5) {
     dplyr::filter(is_anomaly)
 }
 
-calculate_metrics <- function(actual, predicted, metric = c("rmse","mae","mape")) {
+calculate_metrics <- function(
+  actual,
+  predicted,
+  metric = c("rmse", "mae", "mape")
+) {
   metric <- match.arg(metric, several.ok = TRUE)
   # PATCH: validate inputs are numeric vectors of same length
   if (!is.numeric(actual) || !is.numeric(predicted))
@@ -95,12 +117,18 @@ calculate_metrics <- function(actual, predicted, metric = c("rmse","mae","mape")
     stop("actual and predicted must have the same length.")
 
   results <- list()
-  if ("rmse" %in% metric) results$rmse <- sqrt(mean((actual - predicted)^2, na.rm = TRUE))
-  if ("mae"  %in% metric) results$mae  <- mean(abs(actual - predicted),     na.rm = TRUE)
+  if ("rmse" %in% metric)
+    results$rmse <- sqrt(mean((actual - predicted) ^ 2, na.rm = TRUE))
+  if ("mae"  %in% metric)
+    results$mae  <- mean(abs(actual - predicted), na.rm = TRUE)
   if ("mape" %in% metric) {
     nonzero <- actual != 0
     results$mape <- if (any(nonzero))
-      mean(abs((actual[nonzero] - predicted[nonzero]) / actual[nonzero]), na.rm = TRUE) * 100
+      mean(
+        abs((
+             actual[nonzero] - predicted[nonzero]) / actual[nonzero]
+        ), na.rm = TRUE
+      ) * 100
     else NA_real_
   }
   results
@@ -109,7 +137,10 @@ calculate_metrics <- function(actual, predicted, metric = c("rmse","mae","mape")
 forecast_prophet <- function(daily_data, periods = 7L) {
   periods <- .validate_periods(periods)
   if (!requireNamespace("prophet", quietly = TRUE))
-    return(list(success = FALSE, data = data.frame(), error = "prophet package not available"))
+    return(list(
+      success = FALSE, data = data.frame(),
+      error = "prophet package not available"
+    ))
 
   tryCatch({
     dfp <- daily_data |>
@@ -127,7 +158,7 @@ forecast_prophet <- function(daily_data, periods = 7L) {
       dplyr::filter(ds > max(dfp$ds)) |>
       dplyr::transmute(
         date  = as.Date(ds),
-        yhat  = pmax(0, pmin(100, yhat)),          # PATCH: clamp forecast
+        yhat  = pmax(0, pmin(100, yhat)),
         lower = pmax(0, pmin(100, yhat_lower)),
         upper = pmax(0, pmin(100, yhat_upper)),
         trend = trend
@@ -142,11 +173,19 @@ forecast_prophet <- function(daily_data, periods = 7L) {
 forecast_arima <- function(daily_data, periods = 7L) {
   periods <- .validate_periods(periods)
   if (!requireNamespace("forecast", quietly = TRUE))
-    return(list(success = FALSE, data = data.frame(), error = "forecast package not available"))
+    return(list(
+      success = FALSE,
+      data = data.frame(),
+      error = "forecast package not available"
+    ))
 
   tryCatch({
     ts_series <- stats::ts(daily_data$y, frequency = 7L)
-    fit       <- forecast::auto.arima(ts_series, stepwise = TRUE, approximation = FALSE)
+    fit       <- forecast::auto.arima(
+      ts_series,
+      stepwise = TRUE,
+      approximation = FALSE
+    )
     fc        <- forecast::forecast(fit, h = periods, level = c(80L, 95L))
 
     last_date <- max(daily_data$date)
@@ -171,7 +210,11 @@ forecast_arima <- function(daily_data, periods = 7L) {
 forecast_exp_smoothing <- function(daily_data, periods = 7L) {
   periods <- .validate_periods(periods)
   if (!requireNamespace("forecast", quietly = TRUE))
-    return(list(success = FALSE, data = data.frame(), error = "forecast package not available"))
+    return(list(
+      success = FALSE,
+      data = data.frame(),
+      error = "forecast package not available"
+    ))
 
   tryCatch({
     fit  <- forecast::ets(stats::ts(daily_data$y, frequency = 7L))
@@ -197,7 +240,7 @@ forecast_exp_smoothing <- function(daily_data, periods = 7L) {
 }
 
 ensemble_forecast <- function(daily_data, periods = 7L,
-                              methods = c("arima","prophet","ets")) {
+                              methods = c("arima", "prophet", "ets")) {
   periods   <- .validate_periods(periods)
   forecasts <- list()
 
@@ -240,12 +283,19 @@ train_forecast_usage <- function(usage_df, periods = 7L,
   method  <- match.arg(method)
   periods <- .validate_periods(periods)
 
-  prep_result <- prepare_time_series(usage_df, timestamp_col, value_col, min_observations = 8L)
+  prep_result <- prepare_time_series(
+    usage_df,
+    timestamp_col,
+    value_col,
+    min_observations = 8L
+  )
   if (!prep_result$success)
     return(list(original = data.frame(), forecast = data.frame(),
-                anomalies = data.frame(), metrics = NULL, error = prep_result$error))
+                anomalies = data.frame(), metrics = NULL,
+                error = prep_result$error))
   daily <- prep_result$data
-  anomalies <- if (isTRUE(detect_anomalies)) find_anomalies(daily) else data.frame()
+  anomalies <- if (isTRUE(detect_anomalies))
+    find_anomalies(daily) else data.frame()
   fc_result <- switch(method,
     "prophet"    = forecast_prophet(daily, periods),
     "auto_arima" = forecast_arima(daily, periods),
@@ -262,7 +312,11 @@ train_forecast_usage <- function(usage_df, periods = 7L,
     tryCatch({
       fitted_vals <- as.numeric(fc_result$model$fitted)
       if (length(fitted_vals) > 0)
-        metrics <- calculate_metrics(daily$y, fitted_vals, metric = c("rmse","mae","mape"))
+        metrics <- calculate_metrics(
+          daily$y,
+          fitted_vals,
+          metric = c("rmse", "mae", "mape")
+        )
     }, error = function(e) NULL)
   }
 

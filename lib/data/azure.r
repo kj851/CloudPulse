@@ -1,7 +1,7 @@
 # Azure data access and processing functions for Shiny app
 # with security validation and error handling
 # Connect to Azure SQL Database, retrieve metadata, usage, and cost data.
-# Author: Keaton Szantho
+# Copyright (c) 2026, Keaton Szantho
 
 library(shiny)
 library(DBI)
@@ -24,16 +24,19 @@ azure_creds <- function() {
     subscription_id = key_get(service = "azure", username = "subscription_id"),
     resource_group  = key_get(service = "azure", username = "resource_group"),
     db_host         = key_get(service = "azure_db", username = "host"),
-    db_port         = tryCatch(as.integer(key_get(service = "azure_db", username = "port")),
-                       error = function(e) 5432L),
+    db_port         = tryCatch(as.integer(key_get(
+      service = "azure_db", username = "port"
+    )),
+    error = function(e) 5432L),
     db_name         = key_get(service = "azure_db", username = "name"),
     db_user         = key_get(service = "azure_db", username = "user"),
     db_password     = key_get(service = "azure_db", username = "password")
   )
 
   # PATCH: validate UUID format for all ID fields
-  uuid_pattern <- "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-  for (field in c("tenant_id","client_id","subscription_id")) {
+  uuid_pattern <- "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-
+  [0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+  for (field in c("tenant_id", "client_id", "subscription_id")) {
     val <- trimws(creds[[field]] %||% "")
     if (!grepl(uuid_pattern, val, perl = TRUE))
       stop(sprintf("Invalid Azure %s format (must be a UUID).", field))
@@ -43,15 +46,23 @@ azure_creds <- function() {
   if (is.na(creds$db_port) || creds$db_port < 1L || creds$db_port > 65535L)
     creds$db_port <- 5432L
 
-  required_azure <- c("tenant_id","client_id","client_secret","subscription_id")
-  missing_azure  <- required_azure[sapply(creds[required_azure], function(x) is.null(x) || !nzchar(x))]
+  required_azure <- c("tenant_id", "client_id",
+    "client_secret", "subscription_id"
+  )
+  missing_azure  <- required_azure[sapply(
+    creds[required_azure], function(x) is.null(x) || !nzchar(x)
+  )]
   if (length(missing_azure) > 0)
-    stop("Missing required Azure credentials: ", paste(missing_azure, collapse = ", "))
+    stop("Missing required Azure 
+    credentials: ", paste(missing_azure, collapse = ", "))
 
-  required_db <- c("db_host","db_name","db_user","db_password")
-  missing_db  <- required_db[sapply(creds[required_db], function(x) is.null(x) || !nzchar(x))]
+  required_db <- c("db_host", "db_name", "db_user", "db_password")
+  missing_db  <- required_db[sapply(
+    creds[required_db], function(x) is.null(x) || !nzchar(x)
+  )]
   if (length(missing_db) > 0)
-    stop("Missing required Azure DB credentials: ", paste(missing_db, collapse = ", "))
+    stop("Missing required Azure DB 
+    credentials: ", paste(missing_db, collapse = ", "))
 
   creds
 }
@@ -72,7 +83,8 @@ azure_db_conn <- function(creds = azure_creds()) {
 azure_db_query <- function(sql, params = list(), creds = azure_creds()) {
   if (!is.character(sql) || length(sql) != 1L || nchar(sql) > 10000L)
     stop("Invalid SQL argument.")
-  if (grepl("(--|;\\s*DROP|;\\s*DELETE|;\\s*INSERT|;\\s*UPDATE|EXEC\\s*\\(|xp_cmdshell)",
+  if (grepl("(--|;\\s*DROP|;\\s*DELETE|;
+  \\s*INSERT|;\\s*UPDATE|EXEC\\s*\\(|xp_cmdshell)",
             sql, ignore.case = TRUE, perl = TRUE))
     stop("SQL contains disallowed patterns.")
 
@@ -84,7 +96,9 @@ azure_db_query <- function(sql, params = list(), creds = azure_creds()) {
 
 azure_data_server <- function(id, sql) {
   moduleServer(id, function(input, output, session) {
-    data <- reactive({ azure_db_query(sql) })
+    data <- reactive({
+      azure_db_query(sql)
+    })
     data
   })
 }
@@ -137,7 +151,8 @@ azure_db_instance_usage <- function(server_name, creds = azure_creds()) {
   sub <- az$get_subscription(creds$subscription_id)
   mon <- sub$get_monitor_client()
   resource_id <- sprintf(
-    "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.DBforPostgreSQL/flexibleServers/%s",
+    "/subscriptions/%s/resourceGroups/%s/providers
+    /Microsoft.DBforPostgreSQL/flexibleServers/%s",
     creds$subscription_id, creds$resource_group, server_name
   )
   metrics <- mon$get_metrics(
@@ -147,19 +162,27 @@ azure_db_instance_usage <- function(server_name, creds = azure_creds()) {
     interval     = "PT1H",
     timespan     = paste0(
       format(Sys.time() - 7 * 86400, "%Y-%m-%dT%H:%M:%SZ"), "/",
-      format(Sys.time(),             "%Y-%m-%dT%H:%M:%SZ"))
+      format(Sys.time(),             "%Y-%m-%dT%H:%M:%SZ")
+    )
   )
   if (length(metrics$value) == 0 || length(metrics$value[[1]]$timeseries) == 0)
     return(data.frame())
-  usage <- do.call(rbind, lapply(metrics$value[[1]]$timeseries[[1]]$data, function(dp) {
-    data.frame(timestamp = as.POSIXct(dp$timeStamp),
-               cpu_avg   = dp$average,
-               cpu_max   = dp$maximum)
-  }))
+  usage <- do.call(rbind, lapply(
+                                 metrics$value[[1]]$timeseries[[1]]$data,
+                                 function(dp) {
+                                   data.frame(
+                                     timestamp = as.POSIXct(dp$timeStamp,
+                                       format = "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"
+                                     ),
+                                     cpu_avg   = dp$average,
+                                     cpu_max   = dp$maximum
+                                   )
+                                 }))
   usage[order(usage$timestamp), ]
 }
 
-azure_db_cost_by_instance <- function(start_date, end_date, creds = azure_creds()) {
+azure_db_cost_by_instance <- function(
+    start_date, end_date, creds = azure_creds()) {
   dates <- .validate_date_range(start_date, end_date)
   az    <- az_rm$new(tenant = creds$tenant_id, app = creds$client_id,
                      password = creds$client_secret)
@@ -181,7 +204,8 @@ azure_db_cost_by_instance <- function(start_date, end_date, creds = azure_creds(
     )
   )
   cost_data <- cost$query_usage(query)
-  if (is.null(cost_data$properties$rows) || length(cost_data$properties$rows) == 0)
+  if (is.null(cost_data$properties$rows) ||
+        length(cost_data$properties$rows) == 0)
     return(data.frame())
   cols <- length(cost_data$properties$columns)
   results <- do.call(rbind, lapply(cost_data$properties$rows, function(row) {
@@ -194,6 +218,8 @@ azure_db_cost_by_instance <- function(start_date, end_date, creds = azure_creds(
       stringsAsFactors = FALSE
     )
   }))
-  results$instance_name <- sapply(strsplit(results$resource_id, "/"), function(x) x[length(x)])
-  results[, c("start","end","instance_name","cost","currency")]
+  results$instance_name <- sapply(
+    strsplit(results$resource_id, "/"), function(x) x[length(x)]
+  )
+  results[, c("start", "end", "instance_name", "cost", "currency")]
 }

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026, Keaton Szantho
+
 set -eo pipefail
 
 # installer for Ubuntu: logs, waits for apt/dpkg locks, and uses timeouts.

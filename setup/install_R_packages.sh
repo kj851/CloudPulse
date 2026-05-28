@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Install R packages wrapper for Ubuntu/Linux
+# Copyright (c) 2026, Keaton Szantho
 
 set -euo pipefail
 

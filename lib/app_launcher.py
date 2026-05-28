@@ -5,7 +5,7 @@ Starts the Shiny R server as a subprocess, shows a tkinter loading window,
 then opens the dashboard in the system browser (Windows/Linux/macOS).
 No PyQt5 or GPU required.
 
-Author: Keaton Szantho
+Copyright (c) 2026, Keaton Szantho
 """
 
 import os
@@ -273,8 +273,7 @@ class ShinyServer:
         return self.process is not None and self.process.poll() is None
 
 
-# ── Main controller ────────────────────────────────────────────────────────────
-
+# Main controller
 def run():
     try:
         app_r = find_app_r()

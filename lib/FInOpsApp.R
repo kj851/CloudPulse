@@ -4,7 +4,7 @@
 # It includes a credential entry page, dynamic query configuration,
 # and interactive visualizations with forecasting capabilities.
 # Sercure credential handling and error management are implemented.
-# Author: Keaton Szantho
+# Copyright (c) 2026, Keaton Szantho
 
 library(shiny)
 library(plotly)
@@ -26,25 +26,37 @@ if (requireNamespace("future", quietly = TRUE)) {
 }
 
 `%notin%` <- function(x, y) !(x %in% y)
+spinner <- function(expr, ...) expr
 
-if (!requireNamespace("shinycssloaders", quietly = TRUE)) {
-  spinner <- function(expr, ...) expr
-}
+get_mock_cost                   <- NULL
+get_mock_usage                  <- NULL
+get_mock_metadata               <- NULL
+get_mock_instances              <- NULL
+gcp_db_instances_metadata       <- NULL
+aws_rds_instances_metadata      <- NULL
+azure_db_instances_metadata     <- NULL
+aws_rds_instances_metadata      <- NULL
+gcp_db_instance_usage           <- NULL
+aws_rds_instance_usage          <- NULL
+azure_db_instance_usage         <- NULL
+gcp_db_cost_by_instance         <- NULL
+aws_rds_cost_by_instance        <- NULL
+azure_db_cost_by_instance       <- NULL
+train_forecast_usage            <- NULL
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SECURITY MODULE
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Constants and configuration for security and input validation
-max_login_attempts  <- 5L        # lock out after this many failures
-lockout_seconds     <- 300L      # 5-minute lockout window
-session_timeout_s   <- 3600L     # auto-logout after 1 hour of inactivity
-max_input_length    <- 500L      # max chars for free-text fields
-max_notes_length    <- 1000L     # max chars for notes/textarea fields
+max_login_attempt  <- 5L        # lock out after this many failures
+lockout_seconds     <- 1200L     # 20-minute lockout window
+auto_logoff_time   <- 1800L     # auto-logoff after 30 minutes of inactivity
+max_input_chars    <- 500L      # max chars for free-text fields
+max_notes_chars    <- 1000L     # max chars for notes/textarea fields
 
-# Input sanitization functions to prevent
-# injection attacks and ensure data integrity
-sanitize_text <- function(x, max_len = max_input_length) {
+# Input sanitization to prevent injection attacks and ensure valid formats
+sanitize_text <- function(x, max_len = max_input_chars) {
   if (is.null(x) || !is.character(x)) return("")
   x <- trimws(x)
   # Strip HTML / script tags
@@ -65,8 +77,10 @@ sanitize_uuid <- function(x) {
 sanitize_aws_key <- function(x) {
   x <- trimws(x %||% "")
   # AWS access keys: AKIA/ASIA/AROA + 16 uppercase alphanumeric
-  if (!grepl("^(AKIA|ASIA|AROA|AGPA|AIDA|AIPA
-  |ANPA|ANVA|APKA)[A-Z0-9]{16}$", x, perl = TRUE)) return("")
+  if (!grepl(
+    "^(AKIA|ASIA|AROA|AGPA|AIDA|AIPA|ANPA|ANVA|APKA)[A-Z0-9]{16}$",
+    x, perl = TRUE
+  )) return("")
   x
 }
 
@@ -75,10 +89,10 @@ sanitize_aws_region <- function(x) {
   valid_regions <- c(
     "us-east-1", "us-east-2", "us-west-1", "us-west-2",
     "eu-west-1", "eu-west-2", "eu-west-3", "eu-central-1", "eu-north-1",
-    "ap-southeast-1","ap-southeast-2","ap-northeast-1","ap-northeast-2",
-    "ap-south-1","sa-east-1","ca-central-1","me-south-1","af-south-1",
-    "us-gov-west-1","us-gov-east-1","cn-north-1","cn-northwest-1",
-    "af-south-1","ap-east-1","ap-southeast-3","eu-south-1"
+    "ap-southeast-1", "ap-southeast-2", "ap-northeast-1", "ap-northeast-2",
+    "ap-south-1", "sa-east-1", "ca-central-1", "me-south-1", "af-south-1",
+    "us-gov-west-1", "us-gov-east-1", "cn-north-1", "cn-northwest-1",
+    "us-iso-east-1", "us-isob-east-1", "eu-south-1", "eu-south-2", "ap-east-1"
   )
   if (x %notin% valid_regions) return("us-east-1")
   x
@@ -91,6 +105,7 @@ sanitize_gcp_project <- function(x) {
   x
 }
 
+# Sanitize GCP service account JSON by validating structure and required fields
 sanitize_gcp_json <- function(x) {
   x <- trimws(x %||% "")
   if (nchar(x) > 10000) return("")  # sanity size limit
@@ -110,8 +125,9 @@ sanitize_datetime <- function(x) {
   x <- trimws(x %||% "")
   # Accept YYYY-MM-DD HH:MM only
   if (!grepl("^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}$", x, perl = TRUE)) return("")
-  dt <- tryCatch(as.POSIXct(x, format = "%Y-
-  %m-%d %H:%M"), error = function(e) NA)
+  dt <- tryCatch(as.POSIXct(
+    x, format = "%Y-%m-%d %H:%M"
+  ), error = function(e) NA)
   if (is.na(dt)) return("")
   if (dt <= Sys.time()) return("")  # must be in the future
   x
@@ -121,11 +137,14 @@ sanitize_instance_list <- function(x) {
   x <- trimws(x %||% "")
   # Comma-separated alphanumeric + hyphen identifiers only
   parts <- trimws(strsplit(x, ",")[[1]])
-  parts <- parts[grepl("^[a-zA-Z0-9][a-zA-Z0-9\\-_]
-  {0,62}$", parts, perl = TRUE)]
+  parts <- parts[grepl(
+    "^[a-zA-Z0-9][a-zA-Z0-9\\-_]{0,62}$",
+    parts, perl = TRUE
+  )]
   paste(parts, collapse = ", ")
 }
 
+# Sanitize free-form notes with a higher length limit
 sanitize_numeric <- function(x, min_val, max_val, default_val) {
   x <- suppressWarnings(as.numeric(x))
   if (is.na(x) || x < min_val || x > max_val) return(default_val)
@@ -133,47 +152,53 @@ sanitize_numeric <- function(x, min_val, max_val, default_val) {
 }
 
 `%||%` <- function(a, b) if (!is.null(a)) a else b
+
+# Rate limiter
 # Per-session login attempt tracking
+# (stored in reactiveValues passed from server)
 check_rate_limit <- function(attempts, last_attempt_time) {
   now <- Sys.time()
   # Reset counter if lockout window has passed
   if (!is.null(last_attempt_time) &&
-      as.numeric(difftime(now, last_attempt_time, units = "
-      secs")) > lockout_seconds
-  ) {
+    as.numeric(difftime(
+      now, last_attempt_time, units = "secs"
+    )) > lockout_seconds) {
     return(list(locked = FALSE, attempts = 0L, reset = TRUE))
   }
-  locked <- !is.null(attempts) && attempts >= max_login_attempts
+  locked <- !is.null(attempts) && attempts >= max_login_attempt
   list(locked = locked, attempts = attempts %||% 0L, reset = FALSE)
 }
 
+# Calculate remaining lockout time in seconds
 remaining_lockout <- function(last_attempt_time) {
   if (is.null(last_attempt_time)) return(0)
   elapsed <- as.numeric(difftime(Sys.time(), last_attempt_time, units = "secs"))
   max(0, lockout_seconds - elapsed)
 }
 
+# Safe error messages (don't leak internals)
 safe_error <- function(e) {
-  # Map known error types to user-friendly messages
+  # Map known error types to user-friendly messages without exposing error text
   msg <- conditionMessage(e)
-  if (grepl("credentials|auth|permission|
-  access denied", msg, ignore.case = TRUE))
+  if (grepl("credentials|auth|permission|access 
+  denied", msg, ignore.case = TRUE))
     return("Authentication failed. Please check your credentials.")
   if (grepl("network|connection|timeout|refused", msg, ignore.case = TRUE))
     return("Connection error. Please check your network and try again.")
   if (grepl("not found|no such", msg, ignore.case = TRUE))
     return("Resource not found. Please verify your configuration.")
-  # Generic fallback — never expose raw error text
+  # Generic fallback — never expose raw error text to users in production
   "An unexpected error occurred. Please try again."
 }
 
+# Main app code is below — data modules are sourced separately for clarity
 source("data/aws.r")
 source("data/azure.r")
 source("data/GCP.r")
 source("data/mock.r")
 source("data/forecast.r")
 
-# Theme and custom CSS for dark mode support and polished UI
+# UI theming and custom CSS for a modern look with dark mode support
 modern_theme <- bs_theme(
   preset    = "bootstrap",
   primary   = "#0D6EFD",
@@ -187,11 +212,11 @@ modern_theme <- bs_theme(
   base_font = font_collection(font_google("Inter"), "sans-serif")
 )
 
-# Custom CSS overrides for better dark mode support and visual polish
+# Custom CSS overrides for consistent styling and dark mode support
 app_css <- HTML("
   body { font-family: 'Inter', sans-serif; }
   .navbar { display: none; }
- 
+
   /* ── Light mode cards ── */
   .card {
     border: none;
@@ -200,7 +225,7 @@ app_css <- HTML("
   .card-header {
     background-color: #f8f9fa;
   }
- 
+
   /* ── Dark mode — white text everywhere ── */
   [data-bs-theme='dark'] body,
   [data-bs-theme='dark'],
@@ -225,7 +250,7 @@ app_css <- HTML("
   [data-bs-theme='dark'] th,
   [data-bs-theme='dark'] .sidebar,
   [data-bs-theme='dark'] .bslib-sidebar-layout > .sidebar { color: #ffffff !important; }
- 
+
   [data-bs-theme='dark'] .card { background-color: #1e2535 !important; }
   [data-bs-theme='dark'] .card-header { background-color: #161d2e !important; }
   [data-bs-theme='dark'] .sidebar,
@@ -244,11 +269,11 @@ app_css <- HTML("
   [data-bs-theme='dark'] .dataTables_filter label { color: #ffffff !important; }
   [data-bs-theme='dark'] .alert { color: #ffffff !important; }
   [data-bs-theme='dark'] .badge { color: #ffffff !important; }
- 
+
   /* ── Buttons ── */
   .btn-primary { background-color: #667eea; border-color: #667eea; }
   .btn-primary:hover { background-color: #764ba2; border-color: #764ba2; }
- 
+
   /* ── Dev page cards ── */
   .instance-card { transition: box-shadow 0.2s; }
   .instance-card:hover { box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.15) !important; }
@@ -256,34 +281,27 @@ app_css <- HTML("
   .status-running  { background-color: #d1fae5; color: #065f46; }
   .status-stopped  { background-color: #fee2e2; color: #991b1b; }
   .status-pending  { background-color: #fef3c7; color: #92400e; }
-  [data-bs-theme='dark'] .status-running  
-  { background-color: #065f46; color: #d1fae5; }
-  [data-bs-theme='dark'] .status-stopped  
-  { background-color: #991b1b; color: #fee2e2; }
-  [data-bs-theme='dark'] .status-pending  
-  { background-color: #92400e; color: #fef3c7; }
+  [data-bs-theme='dark'] .status-running  { background-color: #065f46; color: #d1fae5; }
+  [data-bs-theme='dark'] .status-stopped  { background-color: #991b1b; color: #fee2e2; }
+  [data-bs-theme='dark'] .status-pending  { background-color: #92400e; color: #fef3c7; }
 ")
 
-# Credentials UI
+# Credentials UI with input sanitization and rate
+# limiting for security hardening
 credentials_ui <- function() {
   div(
     class = "d-flex align-items-center justify-content-center vh-100",
     style = "background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);",
     div(
       class = "card shadow-lg p-5",
-      style = "width: 100%; max-width: 
-      450px; border: none; border-radius: 15px;",
+      style = "width: 100%; max-width: 450px; border: none; border-radius: 15px;",
       div(
         class = "text-center mb-4",
-        h1(
-          "CloudPulse FinOps",
-          class = "fw-bold",
+        h1("CloudPulse - FinOps", class = "fw-bold",
           style = "color: #333; font-size: 2em;"
         ),
-        p(
-          "Cloud Cost Intelligence Platform",
-          class = "text-muted mb-0",
-          style = "font-size: 1.1em;"
+        p("Cloud Cost Intelligence Platform",
+          class = "text-muted mb-0", style = "font-size: 1.1em;"
         )
       ),
       div(
@@ -291,48 +309,60 @@ credentials_ui <- function() {
         h5("Enter Cloud Credentials", class = "fw-bold mb-4"),
         div(class = "mb-3",
           tags$label("Cloud Provider", class = "form-label fw-bold"),
-          selectInput(
-            "cred_provider",
-            NULL,
-            choices = c(
-              "AWS", "Azure", "GCP", "Use Mock Data"
-            ), width = "100%"
-          )
+          selectInput("cred_provider", NULL, choices = c(
+            "AWS","Azure","GCP","Use Mock Data"
+          ), width = "100%")
         ),
         conditionalPanel("input.cred_provider == 'AWS'",
-          div(class="mb-3", textInput("aws_access_key","AWS 
-          Access Key ID", placeholder="AKIA...", width="100%")),
-          div(class="mb-3", passwordInput("aws_secret_key","AWS 
-          Secret Access Key", placeholder="Enter your 
-          secret key", width="100%")),
-          div(class="mb-3", textInput("aws_region","AWS 
-          Region", value="us-east-1", width="100%"))
+          div(class="mb-3", textInput(
+            "aws_access_key", "AWS Access Key ID",
+            placeholder="AKIA...", width="100%"
+          )),
+          div(class="mb-3", passwordInput(
+            "aws_secret_key", "AWS Secret Access Key",
+            placeholder="Enter your secret key", width="100%"
+          )),
+          div(class="mb-3", textInput(
+            "aws_region", "AWS Region",
+            value="us-east-1", width="100%"
+          ))
         ),
         conditionalPanel("input.cred_provider == 'Azure'",
-          div(class="mb-3", textInput("azure_subscription","Subscription 
-          ID", placeholder="UUID", width="100%")),
-          div(class="mb-3", textInput("azure_tenant","Tenant 
-          ID", placeholder="UUID", width="100%")),
-          div(class="mb-3", textInput("azure_client_id","Client 
-          ID", placeholder="UUID", width="100%")),
-          div(class="mb-3", passwordInput("azure_client_secret","Client 
-          Secret", placeholder="Enter your secret", width="100%"))
+          div(class="mb-3", textInput(
+            "azure_subscription", "Subscription ID",
+            placeholder="UUID", width="100%"
+          )),
+          div(class="mb-3", textInput(
+            "azure_tenant", "Tenant ID", placeholder="UUID", width="100%"
+          )),
+          div(class="mb-3", textInput(
+            "azure_client_id", "Client ID", placeholder="UUID", width="100%"
+          )),
+          div(class="mb-3", passwordInput(
+            "azure_client_secret", "Client Secret",
+            placeholder="Enter your secret", width="100%"
+          ))
         ),
         conditionalPanel("input.cred_provider == 'GCP'",
-          div(class="mb-3", textInput("gcp_project_id", "Project 
-          ID", placeholder="my-project", width="100%")),
-          div(class = "mb-3", textAreaInput("gcp_service_account","Service 
-          Account JSON", placeholder="Paste your 
-          service account key", rows=5, width="100%"))
+          div(class="mb-3", textInput(
+            "gcp_project_id","Project ID",
+            placeholder="my-project", width="100%"
+          )),
+          div(class="mb-3", textAreaInput(
+            "gcp_service_account", "Service Account JSON",
+            placeholder = "Paste your service account key",
+            rows = 5, width = "100%"
+          ))
         ),
         conditionalPanel("input.cred_provider == 'Use Mock Data'",
-          div(class="alert alert-info", icon("info-circle"), " Using 
-          demo data for testing purposes")
+          div(class="alert alert-info", 
+            icon("info-circle"), " Using demo data for testing purposes"
+          )
         )
       ),
-      div(class = "d-grid gap-2",
-        actionButton("login_btn", "Connect & 
-        Continue", class = "btn btn-primary btn-lg fw-bold",
+      div(class="d-grid gap-2",
+        actionButton("login_btn",
+          "Connect & Continue", class="btn btn-primary btn-lg fw-bold",
           style = "border-radius: 10px; padding: 0.75rem 1.5rem;"
         )
       ),
@@ -342,15 +372,18 @@ credentials_ui <- function() {
     )
   )
 }
- 
+
 # Developer Page UI
 developer_ui <- function() {
   div(
     class = "p-4",
+
+    # Header
     div(class = "mb-4",
       h2("🛠 Developer Portal", class = "fw-bold"),
-      p("Request test instances, manage schedules, 
-      and configure environments for your organization.",
+      p(
+        "Request test instances, manage schedules, 
+        and configure environments for your organization.",
         class = "text-muted")
     ),
 
@@ -359,21 +392,30 @@ developer_ui <- function() {
       col_widths = c(6, 6),
 
       card(
-        card_header(tags$span("Request Test Instance", class = "fw-bold")),
+        card_header(tags$span("Request a Test Instance", class = "fw-bold")),
         card_body(
           div(class = "mb-3",
             tags$label("Organization / Team", class = "form-label fw-bold"),
-            textInput("dev_org", NULL, placeholder = "e.g. 
-            Data Engineering", width = "100%")
+            textInput(
+              "dev_org",
+              NULL,
+              placeholder = "e.g. Data Engineering",
+              width = "100%"
+            )
           ),
           div(class = "mb-3",
             tags$label("Cloud Provider", class = "form-label fw-bold"),
-            selectInput("dev_provider", NULL, choices = c("AWS", "
-            Azure", "GCP"), width = "100%")
+            selectInput(
+              "dev_provider",
+              NULL,
+              choices = c("AWS","Azure","GCP"), width = "100%"
+            )
           ),
           div(class = "mb-3",
             tags$label("Instance Type", class = "form-label fw-bold"),
-            selectInput("dev_instance_type", NULL,
+            selectInput(
+              "dev_instance_type",
+              NULL,
               choices = c(
                 "Small  (2 vCPU,  4GB RAM)"  = "small",
                 "Medium (4 vCPU,  8GB RAM)"  = "medium",
@@ -384,32 +426,45 @@ developer_ui <- function() {
           ),
           div(class = "mb-3",
             tags$label("Region", class = "form-label fw-bold"),
-            selectInput("dev_region", NULL,
+            selectInput(
+              "dev_region",
+              NULL,
               choices = c(
-                "us-east-1", "us-west-2",
-                "eu-west-1", "ap-southeast-1"
+                "us-east-1", "us-west-2", "eu-west-1", "ap-southeast-1"
               ),
               width = "100%"
             )
           ),
           div(class = "mb-3",
             tags$label("Purpose / Notes", class = "form-label fw-bold"),
-            textAreaInput("dev_notes", NULL,
+            textAreaInput(
+              "dev_notes",
+              NULL,
               placeholder = "Describe the use case for this instance...",
-              rows = 3, width = "100%"
+              rows = 3,
+              width = "100%"
             )
           ),
           div(class = "mb-3",
-            tags$label("Auto-shutdown after 
-            (hours)", class = "form-label fw-bold"),
-            numericInput(
-              "dev_ttl", NULL, value = 8, min = 1, max = 168, width = "100%"
+            tags$label(
+              "Auto-shutdown after (hours)",
+              class = "form-label fw-bold"
             ),
-            tags$small("Instance will be automatically 
-            stopped after this duration.", class = "text-muted")
+            numericInput(
+              "dev_ttl",
+              NULL,
+              value = 8,
+              min = 1,
+              max = 168,
+              width = "100%"
+            ),
+            tags$small(
+              "Instance will be automatically stopped after this duration.",
+              class = "text-muted"
+            )
           ),
           div(class = "d-grid",
-            actionButton("dev_request_btn", "Submit Request",
+            actionButton("dev_request_btn", "Submit a Request",
               class = "btn btn-primary fw-bold", style = "border-radius: 8px;"
             )
           )
@@ -421,8 +476,11 @@ developer_ui <- function() {
         card_header(
           div(class = "d-flex justify-content-between align-items-center",
             tags$span("⚡ Active Test Instances", class = "fw-bold"),
-            actionButton("dev_refresh_btn", icon("rotate"), class = "btn 
-            btn-sm btn-outline-secondary")
+            actionButton(
+              "dev_refresh_btn",
+              icon("rotate"),
+              class = "btn btn-sm btn-outline-secondary"
+            )
           )
         ),
         card_body(
@@ -431,49 +489,68 @@ developer_ui <- function() {
       )
     ),
 
-    # Weekend / Scheduled Shutdown
+    # Scheduled Shutdown
     layout_columns(
       col_widths = c(12),
       card(
-        card_header(tags$span("Automated 
-        Instance Shutdown", class = "fw-bold")),
+        card_header(tags$span(
+          "Automated Instance Shutdown",
+          class = "fw-bold"
+        )),
         card_body(
           layout_columns(
             col_widths = c(4, 4, 4),
 
             div(
               h6("Weekend Shutdown", class = "fw-bold"),
-              p("Automatically stop all non-critical 
-              instances on weekends to reduce costs.",
-                class = "text-muted small"),
+              p(
+                "Automatically stop all non-critical 
+                instances on weekends to reduce costs.",
+                class = "text-muted small"
+              ),
               div(class = "mb-2",
-                checkboxInput("sched_weekend", "Enable weekend 
-                shutdown (Fri 6PM – Mon 8AM)", value = FALSE)
+                checkboxInput(
+                  "sched_weekend",
+                  "Enable weekend shutdown (Fri 6PM - Mon 8AM)",
+                  value = FALSE
+                )
               ),
               conditionalPanel("input.sched_weekend == true",
                 div(class = "alert alert-success p-2",
-                  tags$small("Weekend shutdown active. 
-                  Estimated savings: ~28% monthly compute cost.")
+                  tags$small("Weekend shutdown is active. 
+                  Estimated savings: ~28% monthly compute cost."
+                )
                 )
               )
             ),
 
             div(
               h6("Daily Off-Hours Shutdown", class = "fw-bold"),
-              p("Stop instances outside business 
-              hours automatically.", class = "text-muted small"),
-              div(class = "mb-2",
-                checkboxInput("sched_offhours", "Enable 
-                off-hours shutdown (8PM – 7AM)", value = FALSE)
+              p(
+                "Stop instances outside business hours automatically.",
+                class = "text-muted small"
+              ),
+              div(
+                class = "mb-2",
+                checkboxInput("sched_offhours",
+                  "Enable off-hours shutdown (8PM – 7AM)",
+                  value = FALSE
+                )
               ),
               conditionalPanel("input.sched_offhours == true",
                 div(class = "mb-2",
-                  tags$label("Business hours 
-                  timezone", class = "form-label fw-bold small"),
+                  tags$label(
+                    "Business hours timezone",
+                    class = "form-label fw-bold small"
+                  ),
                   selectInput("sched_tz", NULL,
-                    choices = c("America/New_York", "
-                    America/Chicago", "America/Denver", "
-                    America/Los_Angeles", "UTC"),
+                    choices = c(
+                      "America/New_York",
+                      "America/Chicago",
+                      "America/Denver",
+                      "America/Los_Angeles",
+                      "UTC"
+                    ),
                     width = "100%"
                   )
                 )
@@ -482,25 +559,36 @@ developer_ui <- function() {
 
             div(
               h6("Custom Schedule", class = "fw-bold"),
-              p("Set a specific shutdown time for selected 
-              instances.", class = "text-muted small"),
-
+              p("Set a specific shutdown 
+              time for selected instances.", class = "text-muted small"),
               div(class = "mb-2",
-                tags$label("Shutdown date & 
-                time", class = "form-label fw-bold small"),
-                textInput("sched_custom_dt", NULL,
-                  placeholder = "YYYY-MM-DD HH:MM", width = "100%"
+                tags$label(
+                  "Shutdown date & time",
+                  class = "form-label fw-bold small"
+                ),
+                textInput(
+                  "sched_custom_dt",
+                  NULL,
+                  placeholder = "YYYY-MM-DD HH:MM",
+                  width = "100%"
                 )
               ),
               div(class = "mb-2",
-                tags$label("Target instances 
-                (comma-separated)", class = "form-label fw-bold small"),
-                textInput("sched_targets", NULL,
-                  placeholder = "instance-1, instance-2", width = "100%"
+                tags$label(
+                  "Target instances (comma-separated)",
+                  class = "form-label fw-bold small"
+                ),
+                textInput(
+                  "sched_targets",
+                  NULL,
+                  placeholder = "instance-1, instance-2",
+                  width = "100%"
                 )
               ),
               div(class = "d-grid",
-                actionButton("sched_apply_btn", "Apply Schedule",
+                actionButton(
+                  "sched_apply_btn",
+                  "Apply Schedule",
                   class = "btn btn-outline-primary btn-sm fw-bold"
                 )
               )
@@ -513,8 +601,7 @@ developer_ui <- function() {
           div(
             h6("Schedule Activity Log", class = "fw-bold"),
             div(
-              style = "max-height: 180px; overflow-y: 
-              auto; font-size: 0.85rem;",
+              style = "max-height: 180px; overflow-y: auto; font-size: 0.85rem;",
               uiOutput("sched_log_ui")
             )
           )
@@ -535,7 +622,7 @@ developer_ui <- function() {
   )
 }
 
-# Dashboard UI with sidebar navigation and dynamic content area
+# Dashboard UI
 dashboard_ui <- function() {
   page_sidebar(
     title = "FinOps Dashboard - CloudPulse",
@@ -547,46 +634,49 @@ dashboard_ui <- function() {
           h6("Cloud Analytics", class = "text-muted")
         ),
         actionButton("logout_btn", icon("sign-out-alt"),
-          class = "btn btn-sm btn-outline-secondary", title = "Logout"
+          class = "btn btn-sm btn-outline-secondary",
+          title = "Logout"
         )
       ),
       hr(),
       div(class = "mb-3",
         div(class = "btn-group w-100",
           actionButton("nav_dashboard", "Analytics",
-            class = "btn btn-sm 
-            btn-outline-primary active", style = "border-radius: 6px 0 0 6px;"
+            class = "btn btn-sm btn-outline-primary active",
+            style = "border-radius: 6px 0 0 6px;"
           ),
           actionButton("nav_developer", "🛠 Developer",
-            class = "btn btn-sm 
-            btn-outline-primary", style = "border-radius: 0 6px 6px 0;"
+            class = "btn btn-sm btn-outline-primary",
+            style = "border-radius: 0 6px 6px 0;"
           )
         )
       ),
       hr(),
       conditionalPanel("input.nav_developer % 2 == 0",
         div(class = "mb-4",
-          h6("Query Configuration", class = "fw-bold 
-          text-uppercase small text-muted"),
-          selectInput(
-            "provider","Cloud Provider", 
-            choices = c("AWS", "Azure", "GCP"), width = "100%"
+          h6("Query Configuration",
+            class = "fw-bold text-uppercase small text-muted"
           ),
-          selectInput(
-            "query_type","Query Type",
-            choices = c("Metadata", "Usage", "Cost"), width = "100%"
+          selectInput("provider","Cloud Provider",
+            choices = c("AWS","Azure","GCP"),
+            width = "100%"
           ),
-          checkboxInput("use_mock", "Use mock data (local)", value = TRUE)
+          selectInput("query_type","Query Type",
+            choices = c("Metadata","Usage","Cost"),
+            width = "100%"
+          ),
+          checkboxInput("use_mock","Use mock data (local)", value = TRUE)
         ),
-        conditionalPanel("input.query_type == 
-        'Usage' || input.query_type == 'Cost'",
+        conditionalPanel(
+          "input.query_type == 'Usage' || input.query_type == 'Cost'",
           div(class = "mb-4",
-            h6("Time Period", class = "fw-bold 
-            text-uppercase small text-muted"),
-            dateRangeInput("date_range", NULL,
+            h6("Time Period",
+              class = "fw-bold text-uppercase small text-muted"
+            ),
+            dateRangeInput(
+              "date_range", NULL,
               start = Sys.Date() - 30,
-              end = Sys.Date(),
-              width = "100%"
+              end = Sys.Date(), width = "100%"
             )
           )
         ),
@@ -605,12 +695,10 @@ dashboard_ui <- function() {
         conditionalPanel("input.query_type == 'Metadata'",
           div(class = "mb-4",
             h6("Filter", class = "fw-bold text-uppercase small text-muted"),
-            selectInput("instance_status", "Instance Status",
+            selectInput(
+              "instance_status","Instance Status",
               choices = c(
-                "All",
-                "Available",
-                "Stopped",
-                "Other"
+                "All","Available","Stopped","Other"
               ), width = "100%"
             )
           )
@@ -620,14 +708,22 @@ dashboard_ui <- function() {
             h6("Forecast", class = "fw-bold text-uppercase small text-muted"),
             checkboxInput("enable_forecast","Enable forecast", value = FALSE),
             conditionalPanel("input.enable_forecast == true",
-              numericInput("forecast_horizon","Horizon 
-              (days)", value=7, min=1, max=90, width="100%")
+              numericInput("forecast_horizon",
+                "Horizon (days)",
+                value=7,
+                min=1,
+                max=90,
+                width="100%"
+              )
             )
           )
         ),
         div(class = "d-grid gap-2 mt-4",
-          actionButton("query","Query Data", class = "btn btn-primary fw-bold",
-            style = "padding: 0.75rem; border-radius: 8px; font-size: 1.1em;"
+          actionButton(
+            "query",
+            "Query Data",
+            class = "btn btn-primary fw-bold",
+            style = "padding: 0.75rem; border-radius: 8px;"
           )
         )
       ),
@@ -651,8 +747,7 @@ analytics_ui <- function() {
     layout_columns(col_widths = c(12),
       card(
         class = "bg-gradient",
-        style = "background: 
-        linear-gradient(135deg, #667eea 0%, #764ba2 100%);",
+        style = "background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);",
         div(class = "text-white",
           h2("Cloud Analytics Dashboard", class = "fw-bold mb-2"),
           p("Real-time insights from your cloud infrastructure", class = "mb-0")
@@ -689,8 +784,8 @@ analytics_ui <- function() {
         plotlyOutput("cloud_plot", height = "400px") |> spinner()
       )
     ),
-    conditionalPanel("input.enable_forecast == 
-    true && input.query_type == 'Usage'",
+    conditionalPanel(
+      "input.enable_forecast == true && input.query_type == 'Usage'",
       layout_columns(col_widths = c(12),
         card(full_screen = TRUE,
           card_header("Forecast Projections", class = "fw-bold"),
@@ -701,7 +796,7 @@ analytics_ui <- function() {
   )
 }
 
-# Main UI with navbar and dynamic content area
+# Main UI
 ui <- function() {
   page_navbar(
     title = "CloudPulse FinOps",
@@ -713,12 +808,10 @@ ui <- function() {
           window.addEventListener('shiny:client-message', function(ev) {
             var detail = ev && ev.detail;
             if (!detail || typeof detail !== 'object') return;
-            var headline = detail.headline, 
-            message = detail.message, status = detail.status;
+            var headline = detail.headline, message = detail.message, status = detail.status;
             if (!message) return;
             if (typeof window.showShinyClientMessage === 'function') {
-              window.showShinyClientMessage({ headline: headline, 
-              message: message, status: status });
+              window.showShinyClientMessage({ headline: headline, message: message, status: status });
             }
           });
         "))
@@ -728,7 +821,7 @@ ui <- function() {
   )
 }
 
-# Server logic with authentication, query handling, and state management
+# Server logic
 server <- function(input, output, session) {
 
   user_authenticated     <- reactiveVal(FALSE)
@@ -736,7 +829,8 @@ server <- function(input, output, session) {
   last_query_time        <- reactiveVal(NULL)
   current_page           <- reactiveVal("dashboard")
 
-  # Security state and session management
+  # Security state
+  login_attempts     <- reactiveVal(0L)
   last_attempt_time  <- reactiveVal(NULL)
   last_activity_time <- reactiveVal(Sys.time())
 
@@ -745,18 +839,18 @@ server <- function(input, output, session) {
   observe({
     session_timer()
     if (user_authenticated()) {
-      idle_secs <- as.numeric(difftime(Sys.time(),
-                                       last_activity_time(), units = "secs"))
-      if (idle_secs > session_timeout_s) {
+      idle_secs <- as.numeric(difftime(Sys.time(), last_activity_time(), units = "secs"))
+      if (idle_secs > auto_logoff_time) {
         user_authenticated(FALSE)
         authenticated_provider(NULL)
         session$userData$aws_creds   <- NULL
         session$userData$azure_creds <- NULL
         session$userData$gcp_creds   <- NULL
         login_attempts(0L)
-        showNotification("Session expired due 
-          to inactivity. Please log in again.",
-          type = "warning", duration = 8
+        showNotification(
+          "Session expired due to inactivity. Please log in again.",
+          type = "warning",
+          duration = 8
         )
       }
     }
@@ -768,7 +862,7 @@ server <- function(input, output, session) {
     if (user_authenticated()) last_activity_time(Sys.time())
   })
 
-  # Instance requests
+  # Instance requests store
   instance_requests <- reactiveVal(data.frame(
     ID        = character(),
     Org       = character(),
@@ -785,18 +879,22 @@ server <- function(input, output, session) {
   # Schedule activity log
   sched_log <- reactiveVal(character(0))
 
+  # Nav toggle
   observeEvent(input$nav_dashboard, { current_page("dashboard") })
   observeEvent(input$nav_developer, { current_page("developer") })
 
+  # Main UI render
   output$main_ui <- renderUI({
     if (user_authenticated()) dashboard_ui() else credentials_ui()
   })
 
+  # Page content
   output$page_content <- renderUI({
     if (current_page() == "developer") developer_ui() else analytics_ui()
   })
 
   observeEvent(input$login_btn, {
+    # Rate limit check
     rl <- check_rate_limit(login_attempts(), last_attempt_time())
     if (rl$reset) {
       login_attempts(0L)
@@ -805,10 +903,8 @@ server <- function(input, output, session) {
     if (rl$locked) {
       remaining <- ceiling(remaining_lockout(last_attempt_time()))
       showNotification(
-        paste0(
-          "Too many failed attempts. 
-          Try again in ", remaining, " seconds."
-        ),
+        paste0("Too many failed attempts. 
+        Try again in ", remaining, " seconds."),
         type = "error", duration = 8
       )
       return()
@@ -822,8 +918,9 @@ server <- function(input, output, session) {
       last_activity_time(Sys.time())
       user_authenticated(TRUE)
       authenticated_provider("Mock")
-      showNotification("Connected with 
-      mock data.", type = "message", duration = 3)
+      showNotification(
+        "Connected with mock data.", type = "message", duration = 3
+      )
 
     } else if (provider == "AWS") {
       # Validate and sanitize
@@ -832,16 +929,16 @@ server <- function(input, output, session) {
       region <- sanitize_aws_region(input$aws_region)
 
       errors <- character(0)
-      if (!nzchar(key))    errors <- c(errors, "Invalid AWS Access 
-      Key format (must start with AKIA/ASIA and be 20 characters).")
+      if (!nzchar(key))    errors <- c(errors, "Invalid AWS Access Key 
+      format (must start with AKIA/ASIA and be 20 characters).")
       if (!nzchar(secret)) errors <- c(errors, "AWS Secret Key is required.")
 
       if (length(errors) > 0) {
         login_attempts(login_attempts() + 1L)
         last_attempt_time(Sys.time())
-        showNotification(
-          paste(errors, collapse = " "), type = "warning", duration = 6
-        )
+        showNotification(paste(
+          errors, collapse = " "
+        ), type = "warning", duration = 6)
       } else {
         tryCatch({
           session$userData$aws_creds <- list(
@@ -881,9 +978,9 @@ server <- function(input, output, session) {
       if (length(errors) > 0) {
         login_attempts(login_attempts() + 1L)
         last_attempt_time(Sys.time())
-        showNotification(
-          paste(errors, collapse = " "), type = "warning", duration = 6
-        )
+        showNotification(paste(
+          errors, collapse = " "
+        ), type = "warning", duration = 6)
       } else {
         tryCatch({
           session$userData$azure_creds <- list(
@@ -897,8 +994,9 @@ server <- function(input, output, session) {
           last_activity_time(Sys.time())
           user_authenticated(TRUE)
           authenticated_provider("Azure")
-          showNotification("Azure connected 
-          successfully.", type = "message", duration = 3)
+          showNotification(
+            "Azure connected successfully.", type = "message", duration = 3
+          )
         }, error = function(e) {
           login_attempts(login_attempts() + 1L)
           last_attempt_time(Sys.time())
@@ -911,17 +1009,17 @@ server <- function(input, output, session) {
       svc_account  <- sanitize_gcp_json(input$gcp_service_account)
 
       errors <- character(0)
-      if (!nzchar(project_id))  errors <- c(errors, "Invalid 
-      GCP Project ID (lowercase letters, digits, hyphens, 6-30 chars).")
-      if (!nzchar(svc_account)) errors <- c(errors, "Invalid 
-      Service Account JSON. Must be a valid service_account key file.")
+      if (!nzchar(project_id))  errors <- c(errors, "Invalid
+       GCP Project ID (lowercase letters, digits, hyphens, 6-30 chars).")
+      if (!nzchar(svc_account)) errors <- c(errors, "Invalid
+       Service Account JSON. Must be a valid service_account key file.")
 
       if (length(errors) > 0) {
         login_attempts(login_attempts() + 1L)
         last_attempt_time(Sys.time())
-        showNotification(
-          paste(errors, collapse = " "), type = "warning", duration = 6
-        )
+        showNotification(paste(
+          errors, collapse = " "
+        ), type = "warning", duration = 6)
       } else {
         tryCatch({
           session$userData$gcp_creds <- list(
@@ -933,8 +1031,9 @@ server <- function(input, output, session) {
           last_activity_time(Sys.time())
           user_authenticated(TRUE)
           authenticated_provider("GCP")
-          showNotification("GCP 
-          connected successfully.", type = "message", duration = 3)
+          showNotification(
+            "GCP connected successfully.", type = "message", duration = 3
+          )
         }, error = function(e) {
           login_attempts(login_attempts() + 1L)
           last_attempt_time(Sys.time())
@@ -945,17 +1044,18 @@ server <- function(input, output, session) {
 
     # Show remaining attempts warning
     attempts_now <- login_attempts()
-    if (attempts_now > 0 && attempts_now < max_login_attempts) {
-      remaining_attempts <- max_login_attempts - attempts_now
+    if (attempts_now > 0 && attempts_now < max_login_attempt) {
+      remaining_attempts <- max_login_attempt - attempts_now
       showNotification(
-        paste0("Warning: ", remaining_attempts, " login attempt(s) 
-        remaining before lockout."),
-        type = "warning", duration = 5
+        paste0("Warning: ", remaining_attempts, " 
+        login attempt(s) remaining before lockout."),
+        type ="warning",
+        duration = 5
       )
     }
   })
 
-  # Logout handler — clear all session data and reset state
+  # Logout user handler
   observeEvent(input$logout_btn, {
     user_authenticated(FALSE)
     authenticated_provider(NULL)
@@ -970,16 +1070,17 @@ server <- function(input, output, session) {
   observeEvent(input$dev_request_btn, {
     # Sanitize all developer form inputs
     org      <- sanitize_text(input$dev_org,   max_len = 100L)
-    notes    <- sanitize_text(input$dev_notes, max_len = MAX_NOTES_LENGTH)
+    notes    <- sanitize_text(input$dev_notes, max_len = max_notes_chars)
     ttl      <- sanitize_numeric(input$dev_ttl, 1, 168, 8)
     provider <- input$dev_provider  # selectInput — constrained to valid choices
     inst_type <- input$dev_instance_type
     region   <- input$dev_region
 
     if (!nzchar(org)) {
-      showNotification("Organization name is 
-      required and must not contain special characters.",
-        type = "warning", duration = 4
+      showNotification("Organization name 
+      is required and must not contain special characters.",
+        type = "warning",
+        duration = 4
       )
       return()
     }
@@ -1008,32 +1109,32 @@ server <- function(input, output, session) {
   output$dev_instances_list <- renderUI({
     reqs <- instance_requests()
     if (nrow(reqs) == 0) {
-      return(
-        div(class = "text-muted text-center py-4",
-          icon("server"), " No active test 
-          instances. Submit a request to get started."
-        )
-      )
+      return(div(
+        class = "text-muted text-center py-4",
+        icon("server"),
+        " No active test 
+        instances. Submit a request to get started."
+      ))
     }
     active <- reqs[reqs$Status %in% c("Pending","Running"), ]
     if (nrow(active) == 0) {
-      return(
-        div(
-          class = "text-muted text-center py-4", "No active instances."
-        )
-      )
+      return(div(class = "text-muted text-center py-4", "No active instances."))
     }
     lapply(seq_len(nrow(active)), function(i) {
       row <- active[i, ]
-      status_class <- if (row$Status == "Running") "
-      status-running" else "status-pending"
+      status_class <- if (row$Status == "Running")
+        "status-running" else "status-pending"
       div(class = "card instance-card mb-2 p-3",
         div(class = "d-flex justify-content-between align-items-start",
           div(
             tags$strong(row$ID),
             tags$br(),
-            tags$small(paste(row$Org, "·", row$Provider, "·
-            ", row$Type), class = "text-muted")
+            tags$small(paste(
+              row$Org, "·",
+              row$Provider,
+              "·",
+              row$Type
+            ), class = "text-muted")
           ),
           div(
             tags$span(row$Status, class = paste("status-badge", status_class)),
@@ -1041,13 +1142,19 @@ server <- function(input, output, session) {
             tags$small(paste("TTL:", row$TTL_hrs, "hrs"), class = "text-muted")
           )
         ),
-        if (nzchar(row$Notes)) tags$small(row$Notes, class = "text-muted 
-        d-block mt-1"),
+        if (nzchar(row$Notes)) tags$small(
+          row$Notes,
+          class = "text-muted d-block mt-1"
+        ),
         div(class = "mt-2",
-          actionButton(paste0("stop_", i), "Stop", class = "btn 
-          btn-sm btn-outline-danger me-1"),
-          actionButton(paste0("extend_", i), "+2h", class = "btn 
-          btn-sm btn-outline-secondary")
+          actionButton(paste0(
+            "stop_", i
+          ), "Stop", class = "btn btn-sm btn-outline-danger me-1"
+          ),
+          actionButton(paste0(
+            "extend_", i
+          ), "+2h", class = "btn btn-sm btn-outline-secondary"
+          )
         )
       )
     })
@@ -1057,8 +1164,9 @@ server <- function(input, output, session) {
   output$dev_requests_table <- renderDT({
     reqs <- instance_requests()
     if (nrow(reqs) == 0) {
-      return(datatable(data.frame(Message = "No 
-      requests yet"), options = list(dom = "t")))
+      return(datatable(data.frame(
+        Message = "No requests yet"
+      ), options = list(dom = "t")))
     }
     datatable(reqs,
       options = list(pageLength = 10, scrollX = TRUE, searching = TRUE),
@@ -1072,27 +1180,26 @@ server <- function(input, output, session) {
     targets <- sanitize_instance_list(input$sched_targets)
 
     if (!nzchar(dt)) {
-      showNotification(
-        "Invalid date/time. 
-        Use format YYYY-MM-DD HH:MM and ensure it is in the future.",
-        type = "warning", duration = 5
+      showNotification("Invalid date/time. 
+      Use format YYYY-MM-DD HH:MM and ensure it is in the future.",
+        type = "warning",
+        duration = 5
       )
       return()
     }
     if (!nzchar(targets)) {
-      showNotification(
-        "No valid instance identifiers found. 
-        Use alphanumeric names separated by commas.",
-        type = "warning", duration = 5
+      showNotification("No valid instance 
+      identifiers found. Use alphanumeric names separated by commas.",
+        type = "warning",
+        duration = 5
       )
       return()
     }
-    entry <- paste0(
-      "[", format(
-        Sys.time(), "%H:%M:%S"
-      ), "] 
-      Custom shutdown scheduled at ",
-      dt, " for: ", targets
+    entry <- paste0("[", format(Sys.time(), "%H:%M:%S"), "] Custom 
+    shutdown scheduled at ",
+      dt,
+      " for: ",
+      targets
     )
     sched_log(c(sched_log(), entry))
     showNotification("Custom schedule applied.", type = "message", duration = 3)
@@ -1106,11 +1213,11 @@ server <- function(input, output, session) {
     sched_log(c(sched_log(), entry))
   })
 
+  # Off-hours shutdown log entry
   observeEvent(input$sched_offhours, {
     status <- if (input$sched_offhours) "ENABLED" else "DISABLED"
-    tz     <- if (
-      input$sched_offhours && !is.null(input$sched_tz)
-    ) input$sched_tz else ""
+    tz     <- if (input$sched_offhours &&
+                    !is.null(input$sched_tz)) input$sched_tz else ""
     entry  <- paste0("[", format(Sys.time(), "%H:%M:%S"), "] 
     Off-hours shutdown ", status,
       if (nzchar(tz)) paste0(" (", tz, ")") else ""
@@ -1125,12 +1232,12 @@ server <- function(input, output, session) {
       return(p("No schedule activity yet.", class = "text-muted"))
     }
     tagList(lapply(rev(logs), function(entry) {
-      tags$div(entry, style = "font-family: monospace; padding: 
-      2px 0; border-bottom: 1px solid rgba(0,0,0,0.05);")
+      tags$div(entry, style = "font-family: monospace; 
+      padding: 2px 0; border-bottom: 1px solid rgba(0,0,0,0.05);")
     }))
   })
 
-  # Analytics instances reactive
+  # Analytics: instances reactive for dropdowns, with error handling
   instances <- reactive({
     if (!user_authenticated()) return(character(0))
     tryCatch({
@@ -1149,7 +1256,7 @@ server <- function(input, output, session) {
     updateSelectInput(session, "instance_cost",  choices = instances())
   })
 
-  # Analytics: Query handling with rate limiting and error management
+  # Analytics: cloud data reactive with rate limiting
   query_count      <- reactiveVal(0L)
   last_query_burst <- reactiveVal(NULL)
 
@@ -1163,7 +1270,7 @@ server <- function(input, output, session) {
       if (elapsed < 60) {
         if (query_count() >= 20L) {
           showNotification("Query rate limit reached. 
-            Please wait before querying again.",
+          Please wait before querying again.",
             type = "warning", duration = 5
           )
           return(data.frame(Error = "Rate limit exceeded"))
@@ -1177,9 +1284,10 @@ server <- function(input, output, session) {
     last_activity_time(Sys.time())
     result <- tryCatch({
       if (isTRUE(input$use_mock)) {
-        if (input$query_type == "Metadata") get_mock_metadata(input$provider)
-        else if (input$query_type == "
-        Usage")  get_mock_usage(input$provider, input$instance_usage)
+        if (input$query_type == "Metadata")
+          get_mock_metadata(input$provider)
+        else if (input$query_type == "Usage") 
+          get_mock_usage(input$provider, input$instance_usage)
         else if (input$query_type == "Cost") {
           get_mock_cost(format(input$date_range[1], "%Y-%m-%d"),
                         format(input$date_range[2], "%Y-%m-%d"))
@@ -1190,12 +1298,12 @@ server <- function(input, output, session) {
           else if (input$provider == "Azure") azure_db_instances_metadata()
           else if (input$provider == "GCP") gcp_db_instances_metadata()
         } else if (input$query_type == "Usage") {
-          if (input$provider == "
-          AWS") aws_rds_instance_usage(input$instance_usage)
-          else if (input$provider == "
-          Azure") azure_db_instance_usage(input$instance_usage)
-          else if (input$provider == "
-          GCP") gcp_db_instance_usage(input$instance_usage)
+          if (input$provider == "AWS")
+            aws_rds_instance_usage(input$instance_usage)
+          else if (input$provider == "Azure")
+            azure_db_instance_usage(input$instance_usage)
+          else if (input$provider == "GCP")
+            gcp_db_instance_usage(input$instance_usage)
         } else if (input$query_type == "Cost") {
           s <- format(input$date_range[1], "%Y-%m-%d")
           e <- format(input$date_range[2], "%Y-%m-%d")
@@ -1215,8 +1323,8 @@ server <- function(input, output, session) {
   output$kpi_records    <- renderText({ data <- cloud_data()
                                        nrow(data) })
   output$kpi_last_query <- renderText({
-    if (is.null(last_query_time())) "
-    Never" else format(last_query_time(), "%H:%M:%S")
+    if (is.null(last_query_time())) "Never"
+    else format(last_query_time(), "%H:%M:%S")
   })
 
   # Data table
@@ -1225,95 +1333,101 @@ server <- function(input, output, session) {
     if ("Error" %in% colnames(data)) {
       datatable(data, options = list(dom = "t"))
     } else {
-      datatable(
-        data, options = list(
-          autoWidth = FALSE, scrollX = TRUE, pageLength = 10,
-          lengthMenu = c(5, 10, 25, 50), searching = TRUE, ordering = TRUE
+      datatable(data, options = list(autoWidth = FALSE,
+          scrollX = TRUE, pageLength = 10,
+          lengthMenu = c(5,10,25,50), searching = TRUE,
+          ordering = TRUE
         ), filter = "top"
       )
     }
   })
 
+  # Visualization
   output$cloud_plot <- renderPlotly({
     data <- cloud_data()
     if ("Error" %in% colnames(data)) {
-      return(plot_ly() |> add_annotations(text="No 
-      data available", showarrow=FALSE))
+      return(plot_ly() |> add_annotations(
+        text="No data available",
+        showarrow=FALSE
+      ))
     }
-    if (input$query_type == "Usage" && nrow(data) > 0 && "
-    timestamp" %in% colnames(data)) {
-      p <- plot_ly(data, x = ~timestamp, y = ~cpu_avg, type = "
-      scatter", mode = "lines", name = "Avg CPU",
-                   line=list(color = "#667eea", width=2)) |>
-        add_trace(y=~cpu_max, name = "Max 
-        CPU", line=list(color = "#764ba2", width=2))
+    if (input$query_type == "Usage" && nrow(data) > 0 &&
+          "timestamp" %in% colnames(data)) {
+      p <- plot_ly(
+        data, x=~timestamp, y=~cpu_avg,
+        type="scatter", mode="lines",
+        name="Avg CPU",
+        line=list(color="#667eea", width=2)
+      ) |>
+        add_trace(y=~cpu_max, name="Max CPU",
+          line=list(color="#764ba2", width=2)
+        )
       if (isTRUE(input$enable_forecast)) {
         fc_res <- tryCatch(
-          train_forecast_usage(
-            data, periods = as.integer(input$forecast_horizon)
-          ),
-          error = function(e) list(forecast = data.frame())
-        )
+                           train_forecast_usage(
+                             data, periods = as.integer(input$forecast_horizon)
+                           ),
+                           error = function(e) list(forecast=data.frame()))
+
         if (!is.null(fc_res$forecast) && nrow(fc_res$forecast) > 0) {
-          fc_df <- fc_res$forecast |> transform(
-            timestamp = as.POSIXct(date) + 12 * 3600
-          )
+          fc_df <- fc_res$forecast |>
+            transform(timestamp=as.POSIXct(date)+12*3600)
           p <- p |>
             add_lines(x=fc_df$timestamp, y=fc_df$yhat, name="Forecast",
               line=list(dash="dash", color="#FFC107", width=2)
             ) |>
-            add_ribbons(
-              x=fc_df$timestamp, ymin=fc_df$lower80, ymax=fc_df$upper80,
+            add_ribbons(x=fc_df$timestamp,
+              ymin=fc_df$lower80, ymax=fc_df$upper80,
               name="80% CI", fillcolor="rgba(255,193,7,0.2)",
               line=list(color="transparent"), showlegend=FALSE
             )
         }
       }
-      p |> layout(hovermode = "x 
-      unified", plot_bgcolor = "#f8f9fa", paper_bgcolor = "#ffffff")
-    } else if (
-      input$query_type == "Cost" && nrow(data) > 0 && "cost" %in% colnames(data)
-    ) {
-      plot_ly(data, x = ~start, y = ~cost, type = "bar", name = "Cost",
-              marker = list(color = "#198754")) |>
-        layout(hovermode = "x 
-        unified", plot_bgcolor = "#f8f9fa", paper_bgcolor = "#ffffff")
+      p |> layout(hovermode="x unified",
+        plot_bgcolor="#f8f9fa", paper_bgcolor="#ffffff"
+      )
+    } else if (input$query_type == "Cost" && nrow(data) > 0 &&
+                 "cost" %in% colnames(data)) {
+
+      plot_ly(data, x=~start, y=~cost, type="bar", name="Cost",
+              marker=list(color="#198754")) |>
+        layout(hovermode="x unified",
+          plot_bgcolor="#f8f9fa", paper_bgcolor="#ffffff"
+        )
     } else {
       plot_ly() |> add_annotations(
-        text = "No visualization available for this query type or empty data.",
-        showarrow = FALSE, font = list(color = "#6c757d", size = 14)
-      ) |>
-        layout(xaxis = list(visible = FALSE),
-               yaxis = list(visible = FALSE),
-               plot_bgcolor = "#f8f9fa", paper_bgcolor = "#ffffff")
+        text = "No visualization available for this query type", showarrow=FALSE
+      )
     }
   })
-
-  # Forecast table
-  output$forecast_table <- renderDT({
-    if (isTRUE(input$enable_forecast) && input$query_type == "Usage") {
-      data <- cloud_data()
+  output$forecast_table <- renderDT(
+    {
+      if (isTRUE(input$enable_forecast) && input$query_type == "Usage") {
+        data <- cloud_data()
+      } else {
+        datatable(data.frame(Note = "No forecast available"))
+      }
       if (nrow(data) > 0 && "Error" %notin% colnames(data)) {
         fc_res <- tryCatch(
-          train_forecast_usage(
-            data, periods=as.integer(input$forecast_horizon)
+          train_forecast_usage(data,
+            periods=as.integer(input$forecast_horizon
+            )
           ),
-          error = function(e) NULL)
-        if (!is.null(fc_res) && nrow(fc_res$forecast) > 0) {
-          datatable(fc_res$forecast,
-            options=list(autoWidth=FALSE, scrollX=TRUE, pageLength=10)
-          )
-        } else {
-          datatable(data.frame(Note="No forecast available"))
-        }
+          error = function(e) NULL
+        )
       } else {
-        datatable(data.frame(Note="No historical usage data"))
+        datatable(data.frame(Note = "No historical usage data"))
       }
-    } else {
-      datatable(data.frame(Note="Enable forecast in 
-    the sidebar to view predictions"))
+      if (!is.null(fc_res) && nrow(fc_res$forecast) > 0) {
+        datatable(fc_res$forecast,
+          options = list(autoWidth = FALSE, scrollX = TRUE, pageLength = 10)
+        )
+      } else {
+        datatable(data.frame(Note = "Enable forecast
+        in the sidebar to view predictions"))
+      }
     }
-  })
+  )
 }
 
 shinyApp(ui, server)

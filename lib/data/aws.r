@@ -2,7 +2,7 @@
 # with security validation and error handling
 # S3, RDS, CloudWatch, Cost Explorer. Connect to RDS,
 # retrieve metadata, usage, and cost data.
-# Author: Keaton Szantho
+# Copyright (c) 2026, Keaton Szantho
 
 library(shiny)
 library(DBI)
@@ -28,11 +28,17 @@ library(keyring)
 
 aws_creds <- function() {
   creds <- list(
-    aws_access_key_id     = key_get(service = "aws", username = "access_key_id"),
-    aws_secret_access_key = key_get(service = "aws", username = "secret_access_key"),
+    aws_access_key_id     = key_get(
+      service = "aws", username = "access_key_id"
+    ),
+    aws_secret_access_key = key_get(
+      service = "aws", username = "secret_access_key"
+    ),
     aws_region            = Sys.getenv("AWS_REGION", "us-east-1"),
     rds_host              = key_get(service = "rds", username = "host"),
-    rds_port              = tryCatch(as.integer(key_get(service = "rds", username = "port")),
+    rds_port              = tryCatch(as.integer(
+      key_get(service = "rds", username = "port")
+    ),
                               error = function(e) 5432L),
     rds_dbname            = key_get(service = "rds", username = "dbname"),
     rds_user              = key_get(service = "rds", username = "user"),
@@ -41,7 +47,8 @@ aws_creds <- function() {
 
   # Validate key format
   key <- trimws(creds$aws_access_key_id %||% "")
-  if (!grepl("^(AKIA|ASIA|AROA|AGPA|AIDA|AIPA|ANPA|ANVA|APKA)[A-Z0-9]{16}$", key, perl = TRUE)) {
+  if (!grepl("^(AKIA|ASIA|AROA|AGPA|AIDA|AIPA|ANPA
+  |ANVA|APKA)[A-Z0-9]{16}$", key, perl = TRUE)) {
     stop("Invalid AWS Access Key format.")
   }
 
@@ -63,14 +70,21 @@ aws_creds <- function() {
   }
 
   required_aws <- c("aws_access_key_id","aws_secret_access_key")
-  missing_aws  <- required_aws[sapply(creds[required_aws], function(x) is.null(x) || !nzchar(x))]
+  missing_aws  <- required_aws[sapply(creds[required_aws],
+    function(x) is.null(x) || !nzchar(x)
+  )]
   if (length(missing_aws) > 0)
-    stop("Missing required AWS credentials: ", paste(missing_aws, collapse = ", "))
+    stop("Missing required AWS credentials: ",
+      paste(missing_aws, collapse = ", ")
+    )
 
   required_rds <- c("rds_host","rds_dbname","rds_user","rds_password")
-  missing_rds  <- required_rds[sapply(creds[required_rds], function(x) is.null(x) || !nzchar(x))]
+  missing_rds  <- required_rds[sapply(creds[required_rds],
+  function(x) is.null(x) || !nzchar(x))]
   if (length(missing_rds) > 0)
-    stop("Missing required RDS credentials: ", paste(missing_rds, collapse = ", "))
+    stop("Missing required RDS credentials: ",
+    paste(missing_rds, collapse = ", ")
+  )
 
   creds
 }
@@ -98,7 +112,8 @@ aws_rds_query <- function(sql, params = list(), creds = aws_creds()) {
   if (!is.character(sql) || length(sql) != 1L || nchar(sql) > 10000L)
     stop("Invalid SQL argument.")
   # Reject obviously dangerous patterns
-  if (grepl("(--|;\\s*DROP|;\\s*DELETE|;\\s*INSERT|;\\s*UPDATE|EXEC\\s*\\(|xp_cmdshell)",
+  if (grepl("(--|;\\s*DROP|;\\s*DELETE|;\\s*INSERT|;\\s
+  *UPDATE|EXEC\\s*\\(|xp_cmdshell)",
             sql, ignore.case = TRUE, perl = TRUE))
     stop("SQL contains disallowed patterns.")
 
@@ -155,8 +170,7 @@ if (requireNamespace("paws.rds", quietly = TRUE)) {
     }))
   }
 } else {
-  aws_rds_instances_metadata <- function(...)
-    data.frame(Error = "paws.rds not installed.", stringsAsFactors = FALSE)
+  aws_rds_instances_metadata <- function(...) data.frame(Error = "paws.rds not installed.", stringsAsFactors = FALSE)
 }
 
 if (requireNamespace("paws.cloudwatch", quietly = TRUE)) {
@@ -166,18 +180,26 @@ if (requireNamespace("paws.cloudwatch", quietly = TRUE)) {
     if (!grepl("^[a-zA-Z][a-zA-Z0-9\\-]{0,62}$", instance_id, perl = TRUE))
       stop("Invalid RDS instance identifier.")
 
-    cw      <- paws.cloudwatch::cloudwatch(config = list(region = creds$aws_region))
+    cw      <- paws.cloudwatch::cloudwatch(
+      config = list(region = creds$aws_region)
+    )
     metrics <- cw$get_metric_statistics(
       Namespace  = "AWS/RDS",
       MetricName = "CPUUtilization",
-      Dimensions = list(list(Name = "DBInstanceIdentifier", Value = instance_id)),
+      Dimensions = list(list(
+        Name = "DBInstanceIdentifier",
+        Value = instance_id
+      )),
       StartTime  = Sys.time() - 7 * 86400,
       EndTime    = Sys.time(),
       Period     = 3600L,
       Statistics = list("Average", "Maximum")
     )
     usage <- data.frame(
-      timestamp = sapply(metrics$Datapoints, function(dp) as.POSIXct(dp$Timestamp)),
+      timestamp = sapply(
+        metrics$Datapoints,
+        function(dp) as.POSIXct(dp$Timestamp)
+      ),
       cpu_avg   = sapply(metrics$Datapoints, function(dp) dp$Average),
       cpu_max   = sapply(metrics$Datapoints, function(dp) dp$Maximum),
       stringsAsFactors = FALSE
@@ -225,7 +247,11 @@ if (requireNamespace("paws.cost_explorer", quietly = TRUE)) {
     })))
   }
 } else {
-  aws_rds_cost_by_instance <- function(start_date, end_date, ...)
+  aws_rds_cost_by_instance <- function(
+    start_date,
+    end_date,
+    ...
+  )
     data.frame(start = start_date, end = end_date, instance_id = character(0),
                cost = numeric(0), unit = character(0), stringsAsFactors = FALSE)
 }

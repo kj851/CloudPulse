@@ -2,7 +2,7 @@
 # with security validation and error handling
 # Functions to connect to Cloud SQL, retrieve metadata, usage,
 # and cost data using GCP APIs and BigQuery.
-# Author: Keaton Szantho
+# Copyright (c) 2026, Keaton Szantho
 
 library(shiny)
 library(DBI)
@@ -11,9 +11,12 @@ library(keyring)
 library(httr)
 library(jsonlite)
 
-if (requireNamespace("googleAuthR",          quietly = TRUE)) library(googleAuthR)
-if (requireNamespace("googleCloudStorageR",  quietly = TRUE)) library(googleCloudStorageR)
-if (requireNamespace("bigrquery",            quietly = TRUE)) library(bigrquery)
+if (requireNamespace("googleAuthR", quietly = TRUE))
+  library(googleAuthR)
+if (requireNamespace("googleCloudStorageR", quietly = TRUE))
+  library(googleCloudStorageR)
+if (requireNamespace("bigrquery", quietly = TRUE))
+  library(bigrquery)
 
 `%notin%` <- function(x, y) !(x %in% y)
 `%||%`    <- function(a, b) if (!is.null(a)) a else b
@@ -21,11 +24,18 @@ if (requireNamespace("bigrquery",            quietly = TRUE)) library(bigrquery)
 gcp_creds <- function() {
   creds <- list(
     project_id          = key_get(service = "gcp",    username = "project_id"),
-    service_account_key = key_get(service = "gcp",    username = "service_account_key"),
+    service_account_key = key_get(
+      service = "gcp",
+      username = "service_account_key"
+    ),
     db_instance         = key_get(service = "gcp_db", username = "instance"),
     db_host             = key_get(service = "gcp_db", username = "host"),
-    db_port             = tryCatch(as.integer(key_get(service = "gcp_db", username = "port")),
-                           error = function(e) 5432L),
+    db_port = tryCatch(as.integer(
+      key_get(service = "gcp_db",
+        username = "port"
+      )
+    ),
+    error = function(e) 5432L),
     db_name             = key_get(service = "gcp_db", username = "name"),
     db_user             = key_get(service = "gcp_db", username = "user"),
     db_password         = key_get(service = "gcp_db", username = "password")
@@ -41,14 +51,20 @@ gcp_creds <- function() {
     creds$db_port <- 5432L
 
   required_gcp <- c("project_id","service_account_key")
-  missing_gcp  <- required_gcp[sapply(creds[required_gcp], function(x) is.null(x) || !nzchar(x))]
+  missing_gcp  <- required_gcp[sapply(
+    creds[required_gcp], function(x) is.null(x) || !nzchar(x)
+  )]
   if (length(missing_gcp) > 0)
-    stop("Missing required GCP credentials: ", paste(missing_gcp, collapse = ", "))
+    stop("Missing required GCP 
+    credentials: ", paste(missing_gcp, collapse = ", "))
 
   required_db <- c("db_host","db_name","db_user","db_password")
-  missing_db  <- required_db[sapply(creds[required_db], function(x) is.null(x) || !nzchar(x))]
+  missing_db  <- required_db[sapply(
+    creds[required_db], function(x) is.null(x) || !nzchar(x)
+  )]
   if (length(missing_db) > 0)
-    stop("Missing required GCP DB credentials: ", paste(missing_db, collapse = ", "))
+    stop("Missing required GCP 
+    DB credentials: ", paste(missing_db, collapse = ", "))
 
   creds
 }
@@ -68,8 +84,9 @@ gcp_db_conn <- function(creds = gcp_creds()) {
 gcp_db_query <- function(sql, params = list(), creds = gcp_creds()) {
   if (!is.character(sql) || length(sql) != 1L || nchar(sql) > 10000L)
     stop("Invalid SQL argument.")
-  if (grepl("(--|;\\s*DROP|;\\s*DELETE|;\\s*INSERT|;\\s
-  *UPDATE|EXEC\\s*\\(|xp_cmdshell)",
+  if (
+      grepl(
+            "(--|;\\s*DROP|;\\s*DELETE|;\\s*INSERT|;\\s*UPDATE|EXEC\\s*\\(|xp_cmdshell)",
             sql, ignore.case = TRUE, perl = TRUE))
     stop("SQL contains disallowed patterns.")
 
@@ -81,7 +98,9 @@ gcp_db_query <- function(sql, params = list(), creds = gcp_creds()) {
 
 gcp_data_server <- function(id, sql) {
   moduleServer(id, function(input, output, session) {
-    data <- reactive({ gcp_db_query(sql) })
+    data <- reactive({
+      gcp_db_query(sql)
+    })
     data
   })
 }
@@ -115,12 +134,16 @@ gcp_data_server <- function(id, sql) {
 
 gcp_db_instances_metadata <- function(creds = gcp_creds()) {
   if (!requireNamespace("googleAuthR", quietly = TRUE))
-    return(data.frame(Error = "googleAuthR not installed.", stringsAsFactors = FALSE))
+    return(data.frame(
+      Error = "googleAuthR not installed.", stringsAsFactors = FALSE
+    ))
 
   googleAuthR::gar_auth_service(json_file = creds$service_account_key)
-  url      <- sprintf("https://sqladmin.googleapis.com/v1/projects/%s/instances", creds$project_id)
+  url <- sprintf("https://sqladmin.googleapis.com/v1/projects/%s/instances",
+    creds$project_id
+  )
   response <- httr::GET(url, googleAuthR::gar_api_headers())
-  body     <- .safe_gcp_response(response, "Cloud SQL")
+  body <- .safe_gcp_response(response, "Cloud SQL")
   instances <- jsonlite::fromJSON(body)$items
 
   if (is.null(instances) || length(instances) == 0) return(data.frame())
@@ -152,7 +175,9 @@ gcp_db_instance_usage <- function(instance_name, creds = gcp_creds()) {
     'resource.type="cloudsql_database" AND resource.labels.database_id="%s:%s"',
     creds$project_id, instance_name
   )
-  url  <- sprintf("https://monitoring.googleapis.com/v3/projects/%s/timeSeries", creds$project_id)
+  url  <- sprintf("https://monitoring.googleapis.com/v3/projects/%s/timeSeries",
+    creds$project_id
+  )
   body <- list(
     filter    = filter,
     interval  = list(
@@ -167,11 +192,15 @@ gcp_db_instance_usage <- function(instance_name, creds = gcp_creds()) {
     )
   )
   response <- httr::POST(url, googleAuthR::gar_api_headers(),
-    body = jsonlite::toJSON(body, auto_unbox = TRUE), encode = "json")
-  content  <- .safe_gcp_response(response, "Cloud Monitoring")
-  data     <- jsonlite::fromJSON(content)
+    body = jsonlite::toJSON(
+      body, auto_unbox = TRUE
+    ), encode = "json"
+  )
+  content <- .safe_gcp_response(response, "Cloud Monitoring")
+  data <- jsonlite::fromJSON(content)
 
-  if (is.null(data$timeSeries) || length(data$timeSeries) == 0) return(data.frame())
+  if (is.null(data$timeSeries) ||
+        length(data$timeSeries) == 0) return(data.frame())
 
   usage <- do.call(rbind, lapply(data$timeSeries[[1]]$points, function(p) {
     data.frame(timestamp = as.POSIXct(p$interval$startTime),
@@ -202,9 +231,12 @@ gcp_db_cost_by_instance <- function(start_date, end_date, creds = gcp_creds()) {
              billing_account, perl = TRUE))
     stop("Invalid GCP billing account format.")
 
-  url <- sprintf("https://cloudbilling.googleapis.com/v1/%s:getCost", billing_account)
+  url <- sprintf("https://cloudbilling.googleapis.com/v1/%s:getCost",
+    billing_account
+  )
   body <- list(
-    filter      = sprintf('resource.labels.instance_name="%s"', creds$db_instance),
+    filter      = sprintf('resource.labels.
+    instance_name="%s"', creds$db_instance),
     granularity = "MONTHLY",
     dateRange   = list(
       startDate = list(year  = as.integer(format(dates$sd, "%Y")),
@@ -216,11 +248,15 @@ gcp_db_cost_by_instance <- function(start_date, end_date, creds = gcp_creds()) {
     )
   )
   response <- httr::POST(url, googleAuthR::gar_api_headers(),
-    body = jsonlite::toJSON(body, auto_unbox = TRUE), encode = "json")
+    body = jsonlite::toJSON(
+      body, auto_unbox = TRUE
+    ), encode = "json"
+  )
   content   <- .safe_gcp_response(response, "Cloud Billing")
   cost_data <- jsonlite::fromJSON(content)
 
-  if (is.null(cost_data$costs) || length(cost_data$costs) == 0) return(data.frame())
+  if (is.null(cost_data$costs) ||
+        length(cost_data$costs) == 0) return(data.frame())
 
   do.call(rbind, lapply(cost_data$costs, function(c) {
     data.frame(start = format(dates$sd), end = format(dates$ed),
