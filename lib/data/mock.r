@@ -72,7 +72,14 @@ get_mock_usage <- function(provider, instance_id) {
   provider    <- .valid_provider(provider)
   instance_id <- trimws(instance_id %||% "")
   # Validate instance_id against known mock values
-  valid_ids <- c("aws-db-1","aws-db-2","azure-db-1","azure-db-2","gcp-db-1","gcp-db-2","")
+  valid_ids <- c(
+    "aws-db-1"
+    "aws-db-2"
+    "azure-db-1"
+    "azure-db-2",
+    "gcp-db-1",
+    "gcp-db-2",
+    "")
   if (instance_id %notin% valid_ids) {
     warning("Unknown instance_id '", instance_id, "'; using mock data.")
   }
