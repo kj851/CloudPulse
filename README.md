@@ -15,6 +15,7 @@ FinOps is a desktop wrapper and dashboard for analyzing and optimizing cloud cos
 ## Prerequisites
 
 - R (4.4-4.6 recommended) with requried packages listed in `install_R_packages.R`
+- Lastest Python version with Pyinstaller and Pillow modules
 
 ## Installation & Run (LINUX ONLY)
 
