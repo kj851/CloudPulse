@@ -1,4 +1,4 @@
-# CloudPulse.spec
+# Copyright (c) 2026, Keaton Szantho
 # Build with:  pyinstaller CloudPulse.spec
 #
 # Requirements (Windows, run from repo root):
