@@ -6,11 +6,12 @@ FinOps is a desktop wrapper and dashboard for analyzing and optimizing cloud cos
 
 ## Features
 
-- Real-time cost monitoring
-- Budget alerts and notifications
+- Real-time cost monitoring with intelligent forcasting
+- Budget alerts and notifications (Connection with Jira, Mattermost, and Slack)
 - Cost optimization recommendations and tips
 - Interactive charts and graphs
-- Multi-cloud support (AWS, Azure, GCP)
+- Developer tools
+- MSPs or single CSP support (AWS, Azure, GCP)
 
 ## Prerequisites
 
