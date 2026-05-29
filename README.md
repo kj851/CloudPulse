@@ -11,7 +11,7 @@ FinOps is a desktop wrapper and dashboard for analyzing and optimizing cloud cos
 - Cost optimization recommendations and tips
 - Interactive charts and graphs
 - Developer tools
-- MSPs or single CSP support (AWS, Azure, GCP)
+- Multiple or single CSP support (AWS, Azure, GCP)
 
 ## Prerequisites
 
@@ -19,7 +19,7 @@ FinOps is a desktop wrapper and dashboard for analyzing and optimizing cloud cos
 - Lastest Python version with Pyinstaller and Pillow modules
 
 ## Installation & Run Overveiew
-(See APP_SETUP_<YOUR OS> for OS specific configuration)
+(See APP_SETUP_<YOUROS> for OS specific configuration)
 
 1. Clone the repository:
 
