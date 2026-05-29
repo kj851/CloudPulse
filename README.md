@@ -75,8 +75,6 @@ Please follow these steps:
 ## License
 
 This project is licensed under the BSD 3-Clause License — see [LICENSE](LICENSE) for details.
-3. Use the tips section to apply optimizations.
-4. Set up alerts for budget thresholds.
 
 ## Support
 
