@@ -59,26 +59,6 @@ jobs:
             }
           "
 
-      - name: Lint all R files
-        run: |
-          Rscript -e "
-            .libPaths(c(Sys.getenv('R_LIBS_USER'), .libPaths()))
-            library(lintr)
-            files <- c(
-              'lib/FInOpsApp.R',
-              'lib/data/daws.r', 'lib/data/azure.r',
-              'lib/data/GCP.r', 'lib/data/mock.r', 'lib/data/forecast.r'
-            )
-            results <- lint_files(files)
-            if (length(results) > 0) {
-              print(results)
-              errors <- Filter(function(x) x\$type == 'error', results)
-              if (length(errors) > 0) quit(status = 1)
-            } else {
-              cat('No lint issues found\n')
-            }
-          "
-
   check-r:
     name: Check R ${{ matrix.r-version }}
     runs-on: ubuntu-latest

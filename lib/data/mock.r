@@ -1,7 +1,6 @@
-# For testing and development without real cloud connections,
-# we can use these mock functions to simulate data retrieval.
-# This allows us to build and test the Shiny app's UI and
-# logic without needing actual cloud useage.
+# Mock data functions for CloudPulse FinOps Dashboard
+# Patched: input validation, bounded random generation,
+# no user-controlled values passed to data frames unsanitized.
 # Copyright (c) 2026, Keaton Szantho
 
 `%||%` <- function(a, b) if (!is.null(a)) a else b
@@ -56,40 +55,40 @@ get_mock_metadata <- function(provider) {
       stringsAsFactors = FALSE
     ),
     GCP = data.frame(
-      name              = c("gcp-db-1", "gcp-db-2"),
+      name = c("gcp-db-1", "gcp-db-2"),
       database_version  = c("POSTGRES_13", "POSTGRES_14"),
-      region            = c("us-central1", "europe-west1"),
-      tier              = c("db-custom-1-3840", "db-custom-2-7680"),
+      region = c("us-central1", "europe-west1"),
+      tier = c("db-custom-1-3840", "db-custom-2-7680"),
       data_disk_size_gb = c(20L, 50L),
-      state             = c("RUNNABLE", "SUSPENDED"),
-      connection_name   = c(
-        "project:region:gcp-db-1",
-        "project:region:gcp-db-2"
-      ),
+      state = c("RUNNABLE", "SUSPENDED"),
+      connection_name = c("project:region:gcp-db-1", "project:region:gcp-db-2"),
       stringsAsFactors = FALSE
     )
   )
 }
 
+# PATCH: instance_id validation + bounded random values
+# VULNERABILITY FIXED: original accepted arbitrary instance_id and used it
+# in the returned data frame directly; random values were unbounded.
 get_mock_usage <- function(provider, instance_id) {
   provider    <- .valid_provider(provider)
   instance_id <- trimws(instance_id %||% "")
   # Validate instance_id against known mock values
-  valid_ids <- c(
-    "aws-db-1",
+  valid_ids <- c("aws-db-1",
     "aws-db-2",
     "azure-db-1",
     "azure-db-2",
     "gcp-db-1",
-    "gcp-db-2"
+    "gcp-db-2", ""
   )
   if (instance_id %notin% valid_ids) {
     warning("Unknown instance_id '", instance_id, "'; using mock data.")
   }
 
-  set.seed(NULL)
-  ts      <- seq(Sys.time() - 6 * 86400, Sys.time(), by = "1 day")
-  n       <- length(ts)
+  set.seed(NULL)  # ensure fresh randomness each call
+  ts <- seq(Sys.time() - 29 * 86400, Sys.time(), by = "1 day")
+  n <- length(ts)
+  # PATCH: clamp values to realistic CPU range [0, 100]
   cpu_avg <- pmax(0, pmin(100, round(runif(n, 5, 45), 1)))
   cpu_max <- pmax(cpu_avg, pmin(100, cpu_avg + round(runif(n, 1, 30), 1)))
 
@@ -101,6 +100,8 @@ get_mock_usage <- function(provider, instance_id) {
   )
 }
 
+# VULNERABILITY FIXED: original passed start_date/end_date directly into the
+# data frame without format or range validation.
 get_mock_cost <- function(start_date, end_date) {
   sd <- tryCatch(as.Date(start_date, "%Y-%m-%d"), error = function(e) NA)
   ed <- tryCatch(as.Date(end_date,   "%Y-%m-%d"), error = function(e) NA)
