@@ -967,6 +967,45 @@ analytics_ui <- function() {
   )
 }
 
+# RBAC: Define users with hashed passwords and roles.
+
+has_permissions <- function(user_role, required_role) {
+  role_hierarchy <- c(
+    viewer = 1,
+    devops = 2,
+    finops = 3,
+    admin = 4
+  )
+
+  role_hierarchy[user_role] >= role_hierarchy[required_role]
+
+}
+
+infra_planning <- function() {
+  div(class = "p-4",
+
+    div(class = "mb-4",
+      h2("Infrastructure Planning", class = "fw-bold"),
+      p("Terraform cost estimation and resource planning tools to optimize 
+      cloud infrastructure.",
+        class = "text-muted")
+    ),
+
+    uiOutput("infra_planning_ui"),
+  )
+}
+
+notification_ui <- function() {
+  div(,
+    h2("Notifications", class = "fw-bold"),
+    p("Real-time alerts via Jira, Teams, and Slack",
+      class = "text-muted"
+    ),
+
+    uiOutput("notification_ui")
+  )
+}
+
 # Main UI with navbar and dynamic content area.
 # Also includes global JS listener for client message
 # (e.g. notifications triggered from server). The navbar is hidden on the
@@ -1276,6 +1315,16 @@ server <- function(input, output, session) {
     current_page("dashboard")
     session$userData <- list()
     showNotification("Logged out.", type = "default", duration = 3)
+  })
+
+  # Infra planning page (placeholder for now)
+  output$infra_planning_ui <- renderUI({
+    infra_planning()
+  })
+
+  # Notifications page (placeholder for now)
+  output$notification_ui <- renderUI({
+    notification_ui()
   })
 
   # MULTI-CLOUD OUTPUTS

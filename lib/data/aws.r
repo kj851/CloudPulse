@@ -8,20 +8,19 @@ library(shiny)
 library(DBI)
 library(RPostgres)
 library(aws.s3)
-library(paws.common)
 
 if (requireNamespace("paws.rds", quietly = TRUE)) {
-  library(paws.rds)
+  library(paws.rds) #nolint
 } else {
   message("paws.rds not available.")
 }
 if (requireNamespace("paws.cloudwatch", quietly = TRUE)) {
-  library(paws.cloudwatch)
+  library(paws.cloudwatch) #nolint
 } else {
   message("paws.cloudwatch not available.")
 }
 if (requireNamespace("paws.cost_explorer", quietly = TRUE)) {
-  library(paws.cost_explorer)
+  library(paws.cost_explorer) #nolint
 } else {
   message("paws.cost_explorer not available.")
 }
