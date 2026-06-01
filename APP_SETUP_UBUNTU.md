@@ -2,9 +2,12 @@
 
 ## Quick Start (Ubuntu)
 
-### 1. Install Python Dependencies
+### 1. Install Python and R Dependencies
 ```bash
+cd path/to/CloudPulse
 sudo apt-get update
+./setup/install-deps.sh
+./setup/install_R_packages.sh
 ```
 
 ### 2. Make Launcher Executable
@@ -30,7 +33,7 @@ The dashboard will:
 ### Prerequisites
 ```bash
 sudo apt-get install -y python3-pyinstaller
-pip3 install PyQt5 PyQtWebEngine
+pip3 install setup/requirements.txt
 ```
 
 ### Build Command
@@ -41,7 +44,6 @@ pyinstaller --onefile \
   --windowed \
   --add-data="FInOpsApp.R:." \
   --add-data="data:data" \
-  --hidden-import=PyQt5.QtWebEngineWidgets \
   lib/app_launcher.py
 ```
 
@@ -59,7 +61,7 @@ pyinstaller --onefile \
 FROM ubuntu:24.04
 RUN apt-get update && apt-get install -y \
     r-base r-base-dev \
-    python3-pyqt5 python3-pyqt5.qtwebengine \
+    python3-pillow \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -128,5 +130,4 @@ sudo ./setup/install_R_packages.sh
 To remove the desktop app:
 ```bash
 rm -rf /path/to/CloudPulse
-pip3 uninstall PyQt5 PyQtWebEngine
 ```
