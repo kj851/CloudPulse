@@ -91,11 +91,11 @@ find_anomalies <- function(ts_data, threshold = 1.5) {
   threshold <- max(0.5, min(5.0, as.numeric(threshold %||% 1.5)))
   if (!is.data.frame(ts_data) || nrow(ts_data) < 5L) return(data.frame())
 
-  Q1    <- quantile(ts_data$y, 0.25, na.rm = TRUE)
-  Q3    <- quantile(ts_data$y, 0.75, na.rm = TRUE)
-  IQR   <- Q3 - Q1
-  lower <- Q1 - threshold * IQR
-  upper <- Q3 + threshold * IQR
+  q1    <- quantile(ts_data$y, 0.25, na.rm = TRUE)
+  q3    <- quantile(ts_data$y, 0.75, na.rm = TRUE)
+  iqr   <- q3 - q1
+  lower <- q1 - threshold * iqr
+  upper <- q3 + threshold * iqr
 
   ts_data |>
     dplyr::mutate(
@@ -203,13 +203,13 @@ forecast_arima <- function(daily_data, periods = 7L) {
          error = "ARIMA forecasting failed.")
   })
 }
- 
+
 forecast_exp_smoothing <- function(daily_data, periods = 7L) {
   periods <- .validate_periods(periods)
   if (!requireNamespace("forecast", quietly = TRUE))
     return(list(success = FALSE, data = data.frame(),
       error = "forecast package not available"
-  ))
+    ))
 
   tryCatch({
     fit  <- forecast::ets(stats::ts(daily_data$y, frequency = 7L))
@@ -233,12 +233,12 @@ forecast_exp_smoothing <- function(daily_data, periods = 7L) {
          error = "ETS forecasting failed.")
   })
 }
- 
+
 ensemble_forecast <- function(daily_data, periods = 7L,
-                              methods = c("arima","prophet","ets")) {
+                              methods = c("arima", "prophet", "ets")) {
   periods   <- .validate_periods(periods)
   forecasts <- list()
- 
+
   for (method in methods) {
     result <- switch(method,
       "arima"   = forecast_arima(daily_data, periods),

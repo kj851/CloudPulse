@@ -21,9 +21,9 @@
 get_mock_instances <- function(provider) {
   provider <- .valid_provider(provider)
   switch(provider,
-    AWS   = c("aws-db-1",   "aws-db-2"),
+    AWS   = c("aws-db-1", "aws-db-2"),
     Azure = c("azure-db-1", "azure-db-2"),
-    GCP   = c("gcp-db-1",   "gcp-db-2")
+    GCP   = c("gcp-db-1", "gcp-db-2")
   )
 }
 

@@ -1,5 +1,5 @@
 # Copyright (c) 2026, Keaton Szantho
-name: Release
+name: Release CloudPulse Builds
 
 on:
   push:
@@ -76,9 +76,53 @@ jobs:
           name: CloudPulse-Mac
           path: CloudPulse-Mac.zip
 
+  build-linux:
+    name: Build Linux .AppImage
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: |
+          pip install pyinstaller pillow appimagetool
+      
+      - name: Install AppImage dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libssl-dev libcurl4-openssl-dev libxml2-dev libpq-dev \
+            libcairo2-dev libxt-dev libharfbuzz-dev libfribidi-dev \
+            libgdal-dev libproj-dev libudunits2-dev libsodium-dev \
+            libfontconfig1-dev libfreetype6-dev libuv1-dev libgit2-dev
+        
+      - name: Install tkinter
+        run: |
+          sudo apt-get install -y python3-tk
+
+      - name: Build AppImage
+        run: |
+          pyinstaller CloudPulse.spec
+          appimagetool dist/CloudPulse.AppDir CloudPulse-Linux.AppImage
+
+      - name: Zip the AppImage
+        run: |
+          tar -czf CloudPulse-Linux.tar.gz CloudPulse-Linux.AppImage
+
+      - name: Upload Linux build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CloudPulse-Linux
+          path: CloudPulse-Linux.tar.gz
+      
   release:
     name: Create GitHub Release
-    needs: [build-windows, build-mac]
+    needs: [build-windows, build-mac, build-linux]
     runs-on: ubuntu-latest
 
     steps:

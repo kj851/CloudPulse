@@ -62,7 +62,7 @@ k8s_api <- function(path, cluster_config, method = "GET", body = NULL) {
   }
 
   response <- switch(method,
-    "GET"  = httr::GET( url, headers, config, httr::timeout(15L)),
+    "GET"  = httr::GET(url, headers, config, httr::timeout(15L)),
     "POST" = httr::POST(url, headers, config, httr::timeout(15L),
                         body = jsonlite::toJSON(body, auto_unbox = TRUE),
                         encode = "raw"),
@@ -123,18 +123,18 @@ get_mock_k8s_pods <- function(cluster_name, namespace = "all") {
   statuses <- c(
     "Running", "Running", "Running", "Running",
     "Pending", "CrashLoopBackOff", "Completed"
-)
+  )
   data.frame(
     name       = paste0(sample(c(
       "api", "worker", "cache", "db", "ingress"
-    ), n, replace=TRUE),
+    ), n, replace = TRUE),
     "-", replicate(n, paste0(
       sample(c(0:9, letters[1:6]), 5,
              replace = TRUE), collapse = ""
     ))),
     namespace  = sample(c(
-      "default","kube-system","monitoring","prod"
-    ), n, replace=TRUE),
+      "default", "kube-system", "monitoring", "prod"
+    ), n, replace = TRUE),
     status     = sample(
       statuses, n, replace = TRUE,
       prob = c(.6, .6, .6, .6, .1, .05, .1)
@@ -162,7 +162,7 @@ get_mock_k8s_deployments <- function(cluster_name) {
     "-", seq_len(n)),
     namespace  = sample(c("default", "prod", "staging"), n, replace = TRUE),
     ready      = paste0(sample(
-        1:5, n, replace = TRUE
+      1:5, n, replace = TRUE
     ), "/", sample(3:5, n, replace = TRUE)),
     up_to_date = sample(1:5, n, replace = TRUE),
     available  = sample(1:5, n, replace = TRUE),
@@ -178,7 +178,7 @@ get_mock_k8s_events <- function(cluster_name) {
   reasons  <- c(
     "Scheduled", "Pulled", "Started", "BackOff",
     "OOMKilled", "NodeNotReady", "Killing"
-)
+  )
   msgs     <- c("Successfully assigned pod to node",
                 "Container image pulled successfully",
                 "Started container",
@@ -187,14 +187,14 @@ get_mock_k8s_events <- function(cluster_name) {
                 "Node not ready",
                 "Stopping container")
   data.frame(
-    type      = sample(types,   n, replace=TRUE),
-    reason    = sample(reasons, n, replace=TRUE),
+    type      = sample(types, n, replace = TRUE),
+    reason    = sample(reasons, n, replace = TRUE),
     object    = paste0(
                        "pod/", paste0(replicate(n, paste0(
                          sample(letters, 6, replace = TRUE), collapse = ""
                        )),
                        "-xyz")),
-    namespace = sample(c("default","prod","kube-system"), n, replace = TRUE),
+    namespace = sample(c("default", "prod", "kube-system"), n, replace = TRUE),
     message   = sample(msgs,    n, replace = TRUE),
     age       = paste0(sample(1:60, n, replace = TRUE), "m"),
     stringsAsFactors = FALSE
@@ -224,9 +224,9 @@ get_mock_k8s_metrics <- function(cluster_name) {
   n  <- length(ts)
   data.frame(
     timestamp   = ts,
-    cpu_pct     = pmax(0, pmin(100, cumsum(c(30, diff(runif(n-1, -5, 5)))))),
-    mem_pct     = pmax(0, pmin(100, cumsum(c(45, diff(runif(n-1, -3, 3)))))),
-    pod_count   = sample(15:35, n, replace=TRUE),
+    cpu_pct     = pmax(0, pmin(100, cumsum(c(30, diff(runif(n - 1, -5, 5)))))),
+    mem_pct     = pmax(0, pmin(100, cumsum(c(45, diff(runif(n - 1, -3, 3)))))),
+    pod_count   = sample(15:35, n, replace = TRUE),
     error_rate  = pmax(0, runif(n, 0, 3)),
     stringsAsFactors = FALSE
   )
@@ -241,7 +241,7 @@ k8s_get_nodes <- function(cluster_config) {
     conditions <- node$status$conditions %||% list()
     ready_cond <- Filter(function(c) c$type == "Ready", conditions)
     status     <- if (
-                      length(ready_cond) > 0 && 
+                      length(ready_cond) > 0 &&
                         ready_cond[[1]]$status == "True") "Ready"
     else "NotReady"
     alloc      <- node$status$allocatable %||% list()
@@ -249,7 +249,8 @@ k8s_get_nodes <- function(cluster_config) {
       name    = node$metadata$name %||% "",
       status  = status,
       roles   = paste(names(Filter(function(v) grepl("node-role", v),
-                              node$metadata$labels %||% list())), collapse=","),
+                                   node$metadata$labels %||% list())),
+                      collapse = ","),
       version = node$status$nodeInfo$kubeletVersion %||% "",
       cpu     = alloc$cpu %||% "",
       memory  = alloc$memory %||% "",
@@ -263,7 +264,9 @@ k8s_get_pods <- function(cluster_config, namespace = "") {
     ns <- .valid_k8s_name(namespace)
     if (!nzchar(ns)) stop("Invalid namespace name.")
     paste0("/api/v1/namespaces/", ns, "/pods")
-  } else "/api/v1/pods"
+  } else {
+    "/api/v1/pods"
+  }
   raw   <- k8s_api(path, cluster_config)
   items <- raw$items %||% list()
   if (length(items) == 0) return(data.frame())
@@ -289,7 +292,9 @@ k8s_get_deployments <- function(cluster_config, namespace = "") {
     ns <- .valid_k8s_name(namespace)
     if (!nzchar(ns)) stop("Invalid namespace name.")
     paste0("/apis/apps/v1/namespaces/", ns, "/deployments")
-  } else "/apis/apps/v1/deployments"
+  } else {
+    "/apis/apps/v1/deployments"
+  }
   raw   <- k8s_api(path, cluster_config)
   items <- raw$items %||% list()
   if (length(items) == 0) return(data.frame())
@@ -314,7 +319,9 @@ k8s_get_events <- function(cluster_config, namespace = "") {
     ns <- .valid_k8s_name(namespace)
     if (!nzchar(ns)) stop("Invalid namespace name.")
     paste0("/api/v1/namespaces/", ns, "/events")
-  } else "/api/v1/events"
+  } else {
+    "/api/v1/events"
+  }
   raw   <- k8s_api(path, cluster_config)
   items <- raw$items %||% list()
   if (length(items) == 0) return(data.frame())

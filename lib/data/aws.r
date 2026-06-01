@@ -8,6 +8,7 @@ library(shiny)
 library(DBI)
 library(RPostgres)
 library(aws.s3)
+library(paws.common)
 
 if (requireNamespace("paws.rds", quietly = TRUE)) {
   library(paws.rds)
@@ -39,7 +40,7 @@ aws_creds <- function() {
     rds_port              = tryCatch(as.integer(
       key_get(service = "rds", username = "port")
     ),
-                              error = function(e) 5432L),
+    error = function(e) 5432L),
     rds_dbname            = key_get(service = "rds", username = "dbname"),
     rds_user              = key_get(service = "rds", username = "user"),
     rds_password          = key_get(service = "rds", username = "password")
@@ -57,7 +58,9 @@ aws_creds <- function() {
     "us-east-1", "us-east-2", "us-west-1", "us-west-2",
     "eu-west-1", "eu-west-2", "eu-west-3", "eu-central-1", "eu-north-1",
     "ap-southeast-1", "ap-southeast-2", "ap-northeast-1", "ap-northeast-2",
-    "ap-south-1", "sa-east-1", "ca-central-1", "me-south-1", "af-south-1"
+    "ap-south-1", "sa-east-1", "ca-central-1", "me-south-1", "af-south-1",
+    "eu-south-1", "eu-south-2", "ap-east-1", "ap-southeast-3", "ap-northeast-3",
+    "gov-west-1", "gov-east-1", "gov-west-2", "us-gov-west-1", "us-gov-east-1"
   )
   if (creds$aws_region %notin% valid_regions) {
     creds$aws_region <- "us-east-1"
@@ -69,7 +72,7 @@ aws_creds <- function() {
     creds$rds_port <- 5432L
   }
 
-  required_aws <- c("aws_access_key_id","aws_secret_access_key")
+  required_aws <- c("aws_access_key_id", "aws_secret_access_key")
   missing_aws  <- required_aws[sapply(creds[required_aws],
     function(x) is.null(x) || !nzchar(x)
   )]
@@ -78,13 +81,13 @@ aws_creds <- function() {
       paste(missing_aws, collapse = ", ")
     )
 
-  required_rds <- c("rds_host","rds_dbname","rds_user","rds_password")
+  required_rds <- c("rds_host", "rds_dbname", "rds_user", "rds_password")
   missing_rds  <- required_rds[sapply(creds[required_rds],
-  function(x) is.null(x) || !nzchar(x))]
+                                      function(x) is.null(x) || !nzchar(x))]
   if (length(missing_rds) > 0)
     stop("Missing required RDS credentials: ",
-    paste(missing_rds, collapse = ", ")
-  )
+      paste(missing_rds, collapse = ", ")
+    )
 
   creds
 }
@@ -145,7 +148,9 @@ aws_s3_read_csv <- function(bucket, object, ...) {
 
 aws_data_server <- function(id, sql) {
   moduleServer(id, function(input, output, session) {
-    data <- reactive({ aws_rds_query(sql) })
+    data <- reactive({
+      aws_rds_query(sql)
+    })
     data
   })
 }
@@ -170,7 +175,10 @@ if (requireNamespace("paws.rds", quietly = TRUE)) {
     }))
   }
 } else {
-  aws_rds_instances_metadata <- function(...) data.frame(Error = "paws.rds not installed.", stringsAsFactors = FALSE)
+  aws_rds_instances_metadata <- function(...) data.frame(
+    Error = "paws.rds not installed.",
+    stringsAsFactors = FALSE
+  )
 }
 
 if (requireNamespace("paws.cloudwatch", quietly = TRUE)) {
@@ -213,7 +221,8 @@ if (requireNamespace("paws.cloudwatch", quietly = TRUE)) {
 }
 
 if (requireNamespace("paws.cost_explorer", quietly = TRUE)) {
-  aws_rds_cost_by_instance <- function(start_date, end_date, creds = aws_creds()) {
+  aws_rds_cost_by_instance <- function(
+      start_date, end_date, creds = aws_creds()) {
     # Validate date format and logical range
     sd <- tryCatch(as.Date(start_date, "%Y-%m-%d"), error = function(e) NA)
     ed <- tryCatch(as.Date(end_date,   "%Y-%m-%d"), error = function(e) NA)
@@ -221,7 +230,9 @@ if (requireNamespace("paws.cost_explorer", quietly = TRUE)) {
     if (sd >= ed)                  stop("start_date must be before end_date.")
     if (as.numeric(ed - sd) > 366) stop("Date range must not exceed 366 days.")
 
-    ce   <- paws.cost_explorer::cost_explorer(config = list(region = creds$aws_region))
+    ce   <- paws.cost_explorer::cost_explorer(
+      config = list(region = creds$aws_region)
+    )
     cost <- ce$get_cost_and_usage(
       TimePeriod  = list(Start = format(sd), End = format(ed)),
       Granularity = "MONTHLY",
@@ -232,19 +243,28 @@ if (requireNamespace("paws.cost_explorer", quietly = TRUE)) {
         Values = list("Amazon Relational Database Service")
       ))
     )
-    do.call(rbind, Filter(Negate(is.null), lapply(cost$ResultsByTime, function(rt) {
-      if (length(rt$Groups) == 0) return(NULL)
-      do.call(rbind, lapply(rt$Groups, function(g) {
-        data.frame(
-          start       = format(sd),
-          end         = format(ed),
-          instance_id = sub(".*:db:", "", g$Keys[[1]]),
-          cost        = as.numeric(g$Metrics$BlendedCost$Amount),
-          unit        = g$Metrics$BlendedCost$Unit,
-          stringsAsFactors = FALSE
-        )
-      }))
-    })))
+    do.call(rbind, Filter(
+                          Negate(is.null),
+                          lapply(cost$ResultsByTime,
+                                 function(rt) {
+                                   if (length(rt$Groups) == 0) return(NULL)
+                                   do.call(rbind,
+                                           lapply(rt$Groups, function(g) {
+                                             data.frame(
+                                               start       = format(sd),
+                                               end         = format(ed),
+                                               instance_id =
+                                                 sub(".*:db:", "", g$Keys[[1]]),
+                                               cost        =
+                                                 as.numeric(
+                                                   g$Metrics$BlendedCost$Amount
+                                                 ),
+                                               unit =
+                                                 g$Metrics$BlendedCost$Unit,
+                                               stringsAsFactors = FALSE
+                                             )
+                                           }))
+                                 })))
   }
 } else {
   aws_rds_cost_by_instance <- function(

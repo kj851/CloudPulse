@@ -1502,7 +1502,7 @@ server <- function(input, output, session) {
       )
     }
 
-    rows<-do.call(rbind, Filter(Negate(is.null), lapply(providers, function(p) {
+    rows <- do.call(rbind, Filter(Negate(is.null), lapply(providers, function(p) {
       tryCatch({
         df <- if (use_mock) get_mock_metadata(p) else
           if (p == "AWS") aws_rds_instances_metadata()

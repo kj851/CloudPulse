@@ -50,7 +50,7 @@ gcp_creds <- function() {
   if (is.na(creds$db_port) || creds$db_port < 1L || creds$db_port > 65535L)
     creds$db_port <- 5432L
 
-  required_gcp <- c("project_id","service_account_key")
+  required_gcp <- c("project_id", "service_account_key")
   missing_gcp  <- required_gcp[sapply(
     creds[required_gcp], function(x) is.null(x) || !nzchar(x)
   )]
@@ -58,7 +58,7 @@ gcp_creds <- function() {
     stop("Missing required GCP 
     credentials: ", paste(missing_gcp, collapse = ", "))
 
-  required_db <- c("db_host","db_name","db_user","db_password")
+  required_db <- c("db_host", "db_name", "db_user", "db_password")
   missing_db  <- required_db[sapply(
     creds[required_db], function(x) is.null(x) || !nzchar(x)
   )]
@@ -85,9 +85,11 @@ gcp_db_query <- function(sql, params = list(), creds = gcp_creds()) {
   if (!is.character(sql) || length(sql) != 1L || nchar(sql) > 10000L)
     stop("Invalid SQL argument.")
   if (
-      grepl(
-            "(--|;\\s*DROP|;\\s*DELETE|;\\s*INSERT|;\\s*UPDATE|EXEC\\s*\\(|xp_cmdshell)",
-            sql, ignore.case = TRUE, perl = TRUE))
+    grepl(
+      "(--|;\\s*DROP|;\\s*DELETE|;\\s*INSERT|;\\s*UPDATE|EXEC\\s*\\(|xp_cmdshell)",
+      sql, ignore.case = TRUE, perl = TRUE
+    )
+  )
     stop("SQL contains disallowed patterns.")
 
   conn <- gcp_db_conn(creds)
