@@ -53,6 +53,38 @@ get_mock_k8s_deployments        <- NULL
 get_mock_k8s_metrics            <- NULL
 get_mock_k8s_events             <- NULL
 get_mock_k8s_namespaces         <- NULL
+check_rate_limit                <- NULL
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# API CLIENT (defined in api/api_client.R)
+# ════════════════════════════════════════════════════════════════════════════
+# Set env var CLOUDPULSE_USE_API=true to route all data calls through the API.
+# Leave unset (or set to "false") to call data functions directly (default).
+if (identical(Sys.getenv("CLOUDPULSE_USE_API"), "true")) {
+  message("[CloudPulse] API mode: routing data calls to plumber backend.")
+  source("api/api_client.R")
+} else {
+  message("[CloudPulse] Direct mode: calling data functions in-process.")
+  source("data/aws.r")
+  source("data/azure.r")
+  source("data/GCP.r")
+  source("data/mock.r")
+  source("data/forecast.r")
+  source("data/kubernetes.r")
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RBAC SYSTEM
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Load RBAC modules for role-based access control
+source("rbac.R")
+source("auth.R")
+source("login_ui.R")
+
+# Database path for users (NULL = demo users, specify path for production)
+rbac_db_path <- NULL
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SECURITY MODULE
@@ -471,7 +503,7 @@ k8s_ui <- function() {
                 DTOutput("k8s_nodes_table") |> withSpinner()
               )
             ),
-            nav_panel("📦 Pods",
+            nav_panel("Pods",
               div(class = "pt-3",
                   div(
                     class = "d-flex gap-2 mb-2",
@@ -493,7 +525,7 @@ k8s_ui <- function() {
                 DTOutput("k8s_deployments_table") |> withSpinner()
               )
             ),
-            nav_panel("🗂 Namespaces",
+            nav_panel("Namespaces",
               div(class = "pt-3",
                 DTOutput("k8s_namespaces_table") |> withSpinner()
               )
@@ -522,13 +554,13 @@ multicloud_ui <- function() {
     # Aggregated cost comparison
     layout_columns(col_widths = c(7, 5),
       card(full_screen = TRUE,
-        card_header(tags$span("💰 Cost by Provider", class = "fw-bold")),
+        card_header(tags$span("Cost by Provider", class = "fw-bold")),
         card_body(plotlyOutput(
           "multicloud_cost_plot", height = "300px"
         ) |> withSpinner())
       ),
       card(full_screen = TRUE,
-        card_header(tags$span("📊 Cost Breakdown", class = "fw-bold")),
+        card_header(tags$span("Cost Breakdown", class = "fw-bold")),
         card_body(plotlyOutput(
           "multicloud_cost_pie", height = "300px"
         ) |> withSpinner())
@@ -968,7 +1000,6 @@ analytics_ui <- function() {
 }
 
 # RBAC: Define users with hashed passwords and roles.
-
 has_permissions <- function(user_role, required_role) {
   role_hierarchy <- c(
     viewer = 1,
@@ -1041,23 +1072,37 @@ ui <- function() {
 # Main server function handles authentication, navigation, and state management
 server <- function(input, output, session) {
 
-  user_authenticated     <- reactiveVal(FALSE)
-  authenticated_provider <- reactiveVal(NULL) #nolint
-  last_query_time        <- reactiveVal(NULL)
-  current_page           <- reactiveVal("dashboard")
+  # ════════════════════════════════════════════════════════════════════════════
+  # RBAC AUTHENTICATION STATE
+  # ════════════════════════════════════════════════════════════════════════════
 
-  # Security state
-  login_attempts         <- reactiveVal(0L)
-  last_attempt_time      <- reactiveVal(NULL)
+  user_authenticated      <- reactiveVal(FALSE)
+  current_user_data       <- reactiveVal(NULL)
+  login_attempts_rv       <- reactiveVal(0L)
+  last_attempt_time_rv    <- reactiveVal(NULL)
 
-  user_authenticated     <- reactiveVal(FALSE)
-  connected_providers    <- reactiveVal(character(0))
-  last_query_time        <- reactiveVal(NULL)
-  current_page           <- reactiveVal("dashboard")
-  login_attempts         <- reactiveVal(0L)
-  last_attempt_time      <- reactiveVal(NULL)
-  last_activity_time     <- reactiveVal(Sys.time())
-  k8s_selected_cluster   <- reactiveVal(NULL) #nolint
+  # ════════════════════════════════════════════════════════════════════════════
+  # APPLICATION STATE
+  # ═══════════════════════════════════════════════════════════════════════════=
+
+  authenticated_provider  <- reactiveVal(NULL) #nolint
+  connected_providers     <- reactiveVal(character(0))
+  last_query_time         <- reactiveVal(NULL)
+  current_page            <- reactiveVal("dashboard")
+  last_activity_time      <- reactiveVal(Sys.time())
+  k8s_selected_cluster    <- reactiveVal(NULL) #nolint
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # LOGIN SERVER SETUP
+  # ════════════════════════════════════════════════════════════════════════════
+
+  setup_login_server(
+    input, output, session,
+    user_authenticated,
+    current_user_data,
+    login_attempts_rv,
+    last_attempt_time_rv
+  )
 
   # Session timeout and auto-logout after inactivity
   session_timer <- reactiveTimer(60000)
@@ -1072,10 +1117,11 @@ server <- function(input, output, session) {
 
       if (idle > session_timeout) {
         user_authenticated(FALSE)
+        current_user_data(NULL)
         connected_providers(character(0))
         session$userData <- list()
 
-        login_attempts(0L)
+        login_attempts_rv(0L)
         showNotification("Session expired due to inactivity.",
           type = "warning", duration = 8
         )
@@ -1111,211 +1157,69 @@ server <- function(input, output, session) {
   ))
   sched_log <- reactiveVal(character(0))
 
-  # Nav
-  observeEvent(input$nav_dashboard, {
-    current_page("dashboard")
-    updateTextInput(session, "current_page_input", value = "dashboard")
-  })
-  observeEvent(input$nav_multicloud, {
-    current_page("multicloud")
-    updateTextInput(session, "current_page_input", value = "multicloud")
-  })
-  observeEvent(input$nav_k8s, {
-    current_page("k8s")
-    updateTextInput(session, "current_page_input", value = "k8s")
-  })
-  observeEvent(input$nav_developer, {
-    current_page("developer")
-    updateTextInput(session, "current_page_input", value = "developer")
-  })
-
-  # Main UI switches between credentials page and dashboard
+  # Main UI switches between login page and authenticated dashboard
   output$main_ui <- renderUI({
-    if (user_authenticated()) dashboard_ui() else credentials_ui()
-  })
+    if (user_authenticated() && !is.null(current_user_data())) {
+      # User is authenticated - show dashboard with role-based navigation
+      user_data <- current_user_data()
+      ui_visibility <- get_ui_visibility(user_data$role)
 
-  output$page_content <- renderUI({
-    switch(current_page(),
-      "multicloud" = multicloud_ui(),
-      "k8s"        = k8s_ui(),
-      "developer"  = developer_ui(),
-      analytics_ui()
-    )
-  })
+      page_navbar(
+        title = "CloudPulse FinOps",
+        theme = modern_theme,
+        id = "main_navbar",
 
-  # Dynamic login button label based on selected providers
-  output$login_btn_ui <- renderUI({
-    # Build label from whichever provider toggles are on
-    chosen <- c(
-      if (isTRUE(input$connect_aws))   "AWS",
-      if (isTRUE(input$connect_azure)) "Azure",
-      if (isTRUE(input$connect_gcp))   "GCP",
-      if (isTRUE(input$use_mock_all))  "Mock"
-    )
-    label <- if (length(chosen) == 0) {
-      "Connect & Launch Dashboard"
-    } else {
-      paste0("Connect ", paste(chosen, collapse = " + "), " →")
-    }
-    actionButton(
-      "login_btn", label,
-      class = "btn btn-primary btn-lg fw-bold w-100",
-      style = "border-radius: 10px; background: #0D1F3C; border-color: #0D1F3C; font-size: 1.05em;"
-    )
-  })
-
-  # Login handler with rate limiting and mock mode support
-  observeEvent(input$login_btn, {
-    rl <- check_rate_limit(login_attempts(), last_attempt_time())
-    if (rl$reset) {
-      login_attempts(0L)
-      last_attempt_time(NULL)
-    }
-    if (rl$locked) {
-      remaining <- ceiling(remaining_lockout(last_attempt_time()))
-      showNotification(paste0("Too many failed attempts. 
-      Try again in ", remaining, "s."),
-        type = "error", duration = 8
-      )
-      return()
-    }
-
-    # Mock mode
-    if (isTRUE(input$use_mock_all)) {
-      session$userData$use_mock <- TRUE
-      session$userData$mock_providers <- c("AWS", "Azure", "GCP")
-      connected_providers(c("AWS", "Azure", "GCP"))
-      login_attempts(0L)
-      last_attempt_time(NULL)
-      last_activity_time(Sys.time())
-      user_authenticated(TRUE)
-      showNotification("Connected with mock data for AWS, 
-      Azure, and GCP.", type = "message", duration = 4)
-      return()
-    }
-
-    providers_connected <- character(0)
-    errors              <- character(0)
-    session$userData$use_mock <- FALSE
-
-    # AWS
-    if (isTRUE(input$connect_aws)) {
-      key    <- sanitize_aws_key(input$aws_access_key)
-      secret <- sanitize_text(input$aws_secret_key, max_len = 128L)
-      region <- sanitize_aws_region(input$aws_region)
-      if (!nzchar(key))
-        errors <- c(errors, "AWS: invalid access key format.")
-      else if (!nzchar(secret))
-        errors <- c(errors, "AWS: secret key required.")
-      else if (!nzchar(region))
-        errors <- c(errors, "AWS: invalid region format.")
-      else
-        session$userData$aws_creds <- list(
-          access_key = key,
-          secret_key = secret,
-          region = region,
-          k8s_enabled = isTRUE(input$aws_k8s_enabled)
-        )
-      providers_connected <- c(providers_connected, "AWS")
-    }
-
-    # Azure
-    if (isTRUE(input$connect_azure)) {
-      sub_id    <- sanitize_uuid(input$azure_subscription)
-      tenant_id <- sanitize_uuid(input$azure_tenant)
-      client_id <- sanitize_uuid(input$azure_client_id)
-      secret    <- sanitize_text(input$azure_client_secret, max_len = 128L)
-      if (!nzchar(sub_id)) {
-        errors <- c(
-          errors, "Azure: invalid subscription ID."
-        )
-      } else if (!nzchar(tenant_id)) {
-        errors <- c(
-          errors, "Azure: invalid tenant ID."
-        )
-      } else if (!nzchar(client_id)) {
-        errors <- c(
-          errors, "Azure: invalid client ID."
-        )
-      } else if (!nzchar(secret)) {
-        errors <- c(
-          errors, "Azure: client secret required."
-        )
-      } else {
-        session$userData$azure_creds <- list(
-          subscription = sub_id, tenant = tenant_id,
-          client_id = client_id, client_secret = secret,
-          k8s_enabled = isTRUE(input$azure_k8s_enabled)
-        )
-        providers_connected <- c(providers_connected, "Azure")
-      }
-    }
-
-    # GCP
-    if (isTRUE(input$connect_gcp)) {
-      project_id  <- sanitize_gcp_project(input$gcp_project_id)
-      svc_account <- sanitize_gcp_json(input$gcp_service_account)
-      if (!nzchar(project_id)) {
-        errors <- c(errors, "GCP: invalid project ID.")
-      } else if (!nzchar(svc_account)) {
-        errors <- c(
-          errors, "GCP: invalid service account JSON."
-        )
-      } else {
-        session$userData$gcp_creds <- list(
-          project_id = project_id, service_account = svc_account,
-          k8s_enabled = isTRUE(input$gcp_k8s_enabled)
-        )
-        providers_connected <- c(providers_connected, "GCP")
-      }
-    }
-
-    if (length(errors) > 0) {
-      login_attempts(login_attempts() + 1L)
-      last_attempt_time(Sys.time())
-      showNotification(paste(
-        errors, collapse = " "
-      ), type = "warning", duration = 8)
-    }
-    if (length(providers_connected) == 0 && length(errors) == 0) {
-      showNotification(
-        "Please connect at least one provider or enable mock data.",
-        type = "warning", duration = 5
-      )
-      return()
-    }
-    if (length(providers_connected) > 0) {
-      connected_providers(providers_connected)
-      login_attempts(0L)
-      last_attempt_time(NULL)
-      last_activity_time(Sys.time())
-      user_authenticated(TRUE)
-      showNotification(
-        paste0(
-          "Connected: ", paste(providers_connected, collapse = ", ")
+        # Dashboard (visible to all)
+        nav_panel(
+          "Dashboard",
+          dashboard_ui()
         ),
-        type = "message", duration = 4
+
+        # Multi-Cloud (visible to users with cost/cloud visibility)
+        if (ui_visibility$show_multicloud) nav_panel(
+          "Multi-Cloud",
+          tagList(
+            credentials_ui(),
+            hr(),
+            multicloud_ui()
+          )
+        ),
+
+        # Kubernetes (visible to users with cluster access)
+        if (ui_visibility$show_k8s) nav_panel(
+          "Kubernetes",
+          k8s_ui()
+        ),
+
+        # Analytics/Reports (visible if user can generate reports)
+        if (ui_visibility$show_reports) nav_panel(
+          "Reports",
+          analytics_ui()
+        ),
+
+        # Developer (visible to admins)
+        if (ui_visibility$show_settings) nav_panel(
+          "Developer",
+          developer_ui()
+        ),
+
+        # User info (right-aligned)
+        nav_spacer(),
+        nav_item(
+          div(
+            style = "padding-right: 20px;",
+            user_info_header(user_data)
+          )
+        )
       )
-    }
-
-    attempts_now <- login_attempts()
-
-    if (attempts_now > 0 && attempts_now < max_login_attempts) {
-      showNotification(paste0(
-        "Warning: ", max_login_attempts - attempts_now,
-        " attempt(s) remaining before lockout."
-      ), type = "warning", duration = 5)
+    } else {
+      # User not authenticated - show login page
+      login_ui()
     }
   })
 
-  # Logout
-  observeEvent(input$logout_btn, {
-    user_authenticated(FALSE)
-    connected_providers(character(0))
-    current_page("dashboard")
-    session$userData <- list()
-    showNotification("Logged out.", type = "default", duration = 3)
-  })
+  # Cloud provider configuration occurs after RBAC authentication
+  # Users authenticate via login, then configure providers in Multi-Cloud tab
 
   # Infra planning page (placeholder for now)
   output$infra_planning_ui <- renderUI({

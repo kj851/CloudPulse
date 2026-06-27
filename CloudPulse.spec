@@ -8,9 +8,6 @@
 # R must still be installed on the target machine.
 # All R packages must be pre-installed (run install_R_packages.R once).
 #
-# Put your logo files in lib/assets/
-#   icon.ico  — exe/taskbar icon  (convert PNG→ICO at icoconvert.com)
-#   logo.png  — shown in splash window
 
 from PyInstaller.utils.hooks import collect_submodules
 import os

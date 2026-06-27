@@ -35,7 +35,8 @@ pkgs <- c(
   "languageserver", "forecast",
   "prophet", "future", "aws.s3", "AzureRMR", "AzureAuth", "AzureStor",
   "googleAuthR", "googleCloudStorageR", "bigrquery", "httr", "jsonlite",
-  "DBI", "RPostgres", "keyring"
+  "DBI", "RPostgres", "keyring", "config", "logger", "plumber", "testthat",
+  "RSQLite", "openssl", "shinytest2", "withr", "callr"
 )
 
 skip_pkgs <- c("paws", "paws.analytics")

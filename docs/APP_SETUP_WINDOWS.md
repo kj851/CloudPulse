@@ -64,7 +64,7 @@ pip install pyinstaller
 pyinstaller CloudPulse.spec
 ```
 
-The finished executable is staged at `dist\CloudPulse.exe`.
+The finished executable is staged in `dist\CloudPulse.exe`.
 
 ---
 
